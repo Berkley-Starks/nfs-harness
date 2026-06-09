@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in. Must agree with the test plane on
+# region / aws_profile / project_name so the remote-state lookup + AZ match.
+
+ssh_key_name = "nfs-harness"   # same key pair as the test plane
+
+region      = "us-east-1"
+aws_profile = "nfs-harness-tight" # or nfs-harness-broad as a fallback
+
+# The on-demand toggle. The harness wrapper flips this for obs-up / obs-down.
+observability_running = true
+
+# Set a real password before exposing Grafana.
+# grafana_admin_password = "use-something-real"
+
+# observability_instance_type = "t3.small"
+# metrics_volume_size_gb      = 10

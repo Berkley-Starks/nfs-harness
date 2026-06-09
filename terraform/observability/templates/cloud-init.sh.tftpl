@@ -1,0 +1,141 @@
+#!/bin/bash
+###############################################################################
+# Observability box bootstrap.
+#
+# Idempotent + re-attach safe: the persistent EBS volume is formatted only if it
+# has no filesystem yet, so a fresh obs-up onto an existing metrics volume keeps
+# every prior data point. Prometheus TSDB and Grafana DB both live on /data,
+# which IS that volume — the instance is cattle, the data is a pet.
+###############################################################################
+set -euxo pipefail
+exec > >(tee -a /var/log/obs-bootstrap.log) 2>&1
+
+############################ 1. mount metrics volume ##########################
+# The attached EBS shows up as a second NVMe disk. Pick the one disk that has no
+# partitions/filesystem-in-use as root: the data disk is the NVMe device that is
+# not currently mounted at /.
+ROOT_DISK="$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" | head -1)"
+DATA_DISK=""
+for _try in $(seq 1 30); do
+  for d in $(lsblk -dno NAME -e7); do          # -e7 skips loop devices
+    [ "$d" = "$ROOT_DISK" ] && continue
+    DATA_DISK="/dev/$d"
+    break
+  done
+  [ -n "$DATA_DISK" ] && break
+  echo "waiting for data volume to attach..."; sleep 5
+done
+
+if [ -z "$DATA_DISK" ]; then echo "ERROR: metrics volume never appeared"; exit 1; fi
+
+if ! blkid "$DATA_DISK"; then
+  echo "no filesystem on $DATA_DISK — first use, formatting"
+  mkfs.ext4 -L obsdata "$DATA_DISK"
+fi
+
+mkdir -p /data
+mount "$DATA_DISK" /data
+grep -q "/data" /etc/fstab || echo "LABEL=obsdata /data ext4 defaults,nofail 0 2" >> /etc/fstab
+
+# Per-service data dirs with the uids the upstream images run as.
+mkdir -p /data/prometheus /data/grafana
+chown 65534:65534 /data/prometheus     # prometheus runs as nobody
+chown 472:472 /data/grafana            # grafana runs as uid 472
+
+############################ 2. container runtime ############################
+dnf install -y docker
+systemctl enable --now docker
+
+############################ 3. prometheus config ###########################
+mkdir -p /etc/prometheus
+cat > /etc/prometheus/prometheus.yml <<PROM
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # node_exporter on the test plane (clients + self-managed server when present).
+  # The NFS client metrics ride in via node_exporter's mountstats collector.
+  - job_name: nfs_fleet
+    static_configs:
+      - targets: [${scrape_targets_yaml}]
+PROM
+
+############################ 4. grafana provisioning ########################
+mkdir -p /etc/grafana/provisioning/datasources /etc/grafana/provisioning/dashboards /var/lib/grafana-dashboards
+
+cat > /etc/grafana/provisioning/datasources/prometheus.yml <<DS
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+DS
+
+cat > /etc/grafana/provisioning/dashboards/harness.yml <<DP
+apiVersion: 1
+providers:
+  - name: harness
+    folder: 'NFS Harness'
+    type: file
+    options:
+      path: /var/lib/grafana-dashboards
+DP
+
+# A compact starter dashboard: fleet CPU, network throughput, and NFS client op
+# rate (from node_exporter mountstats). Enough to SEE load land; explore the
+# rest in Grafana directly.
+cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
+{
+  "title": "NFS Harness — Fleet",
+  "uid": "nfs-harness",
+  "schemaVersion": 39,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "timeseries", "title": "CPU busy % (per node)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [ { "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Network receive (bytes/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [ { "expr": "rate(node_network_receive_bytes_total{device!~\"lo\"}[1m])", "legendFormat": "{{instance}} {{device}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "NFS client operations/s (mountstats)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_total_operations[1m]))", "legendFormat": "{{instance}}" } ]
+    }
+  ]
+}
+DASH
+
+############################ 5. run the stack ###############################
+# host networking so Grafana reaches Prometheus at localhost:9090 with no extra
+# bridge. Data dirs bind to /data (the persistent EBS volume).
+docker rm -f prometheus grafana >/dev/null 2>&1 || true
+
+docker run -d --name prometheus --restart unless-stopped --network host \
+  -v /etc/prometheus:/etc/prometheus \
+  -v /data/prometheus:/prometheus \
+  prom/prometheus:latest \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/prometheus
+
+docker run -d --name grafana --restart unless-stopped --network host \
+  -e GF_SECURITY_ADMIN_PASSWORD='${grafana_admin_password}' \
+  -e GF_USERS_ALLOW_SIGN_UP=false \
+  -v /data/grafana:/var/lib/grafana \
+  -v /etc/grafana/provisioning:/etc/grafana/provisioning \
+  -v /var/lib/grafana-dashboards:/var/lib/grafana-dashboards \
+  grafana/grafana:latest
+
+echo "observability bootstrap complete"
