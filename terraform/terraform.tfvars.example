@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. Values without defaults are required.
+
+# --- Required ---------------------------------------------------------------
+ssh_key_name = "nfs-harness"        # name of your EC2 key pair
+admin_cidr   = "YOUR.IP.HERE/32"    # run: curl -s ifconfig.me  then append /32
+
+# --- Common overrides -------------------------------------------------------
+region = "us-east-1"
+# Least-privilege user by default. If terraform fails on a missing IAM action,
+# temporarily switch to the broad user to unblock, then tighten the policy:
+#   aws_profile = "nfs-harness-broad"
+aws_profile = "nfs-harness-tight"
+
+# Backend: start with efs to prove the harness fast, flip to self_managed later.
+nfs_backend = "efs"
+
+# Fleet scale (the "at scale" knob).
+client_count         = 3
+client_instance_type = "t3.small"
+
+# Capacity types — both default to spot. Flip server to on_demand for a clean
+# uninterrupted benchmark run:
+# client_capacity_type = "spot"
+# server_capacity_type = "on_demand"
