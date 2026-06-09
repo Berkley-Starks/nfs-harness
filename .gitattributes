@@ -1,0 +1,11 @@
+# Keep scripts LF so they execute under WSL/Linux regardless of the host that
+# checked them out. bin/harness has no extension, so it needs an explicit rule.
+* text=auto
+*.sh        text eol=lf
+*.tftpl     text eol=lf
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.cfg       text eol=lf
+*.j2        text eol=lf
+bin/harness text eol=lf
