@@ -8,6 +8,20 @@ tighten tight.
 **Account:** 111122223333 · **Region:** us-east-1
 **Method:** EC2 `--dry-run` probes (auth-only) + real read calls + apply observations.
 
+## ✅ VALIDATED 2026-06-09
+
+With the corrected policy
+([iam/nfs-harness-tight-policy.json](iam/nfs-harness-tight-policy.json)) applied to
+`nfs-harness-tight`, the **full lifecycle runs end-to-end on tight alone** — no
+broad fallback, no `-refresh=false`, no out-of-band steps:
+- `terraform apply` → **EXIT 0** (VPC, subnet, IGW+attach, 3 SGs, 3 instances,
+  EFS + mount target, guardrail with IaC-managed inline policy).
+- `terraform destroy` → **EXIT 0**, verified no VPC/EFS/instances remain.
+
+(on-demand clients; spot still needs the EC2-Spot SLR — gap #5.) Remaining
+finding #7's `RequestTag` restructure and #8's `CreateNetworkInterface` are both
+incorporated and confirmed working.
+
 ## RESOLUTION — corrected tight policy
 
 A ready-to-paste, gap-closed policy lives at
@@ -135,6 +149,20 @@ and so aren't covered by the tag-conditioned create grants.
   new-resource ARN, plus an allow on the parent `vpc/*` ARN (ResourceTag) — the
   AWS-documented tag-on-create pattern.
 - **Status:** open — next policy revision.
+
+### 8. `ec2:CreateNetworkInterface` — DENY (EFS mount target) ⛔
+- **When:** apply on the #7-fixed policy (2026-06-09). Everything else succeeded on
+  tight — VPC+ModifyVpcAttribute, AttachInternetGateway, CreateSubnet,
+  CreateSecurityGroup, RunInstances (×3), guardrail (IaC-managed). Only
+  `elasticfilesystem:CreateMountTarget` failed: `AccessDeniedException`.
+- **Root cause:** CreateMountTarget makes the EFS service place an **ENI** in your
+  subnet **using the caller's credentials**, so the caller needs
+  `ec2:CreateNetworkInterface` (confirmed denied via dry-run). Teardown
+  (DeleteMountTarget) needs `ec2:DeleteNetworkInterface`.
+- **Fix:** added `ec2:CreateNetworkInterface`, `ec2:DeleteNetworkInterface`,
+  `ec2:ModifyNetworkInterfaceAttribute` to the unconditioned EC2 build statement
+  (the mount-target ENI is EFS-managed/untagged, so it can't be tag-gated).
+- **Status:** fix in the policy file; pending the next apply to confirm.
 
 ## Still UNKNOWN (resolve on next apply)
 

@@ -128,7 +128,12 @@ resource or carry no request tags. The deploy surfaced these, in order:
 | `iam:GetRolePolicy` denied on **both** users (provider reads inline policy back) | Added to tight. ✅ confirmed fixed (guardrail policy now IaC-managed). Add to broad too. |
 | `elasticfilesystem:ListTagsForResource` (EFS tag read-back) | Added to tight. |
 | `iam:CreateServiceLinkedRole` for **spot** denied on both | Added (scoped to the Spot SLR) — or run on-demand. Workaround used: `client_capacity_type=on_demand`. |
-| `RequestTag` condition blocks `AttachInternetGateway` / `CreateSubnet` / `CreateSecurityGroup` (they authorize on the VPC) | **Open** — move EC2 build actions to an unconditioned statement; keep destructive actions ResourceTag-locked. |
+| `RequestTag` condition blocks `AttachInternetGateway` / `CreateSubnet` / `CreateSecurityGroup` (they authorize on the VPC) | ✅ Fixed — moved EC2 build actions to an unconditioned statement; destructive actions stay ResourceTag-locked. |
+| `ec2:CreateNetworkInterface` denied (EFS `CreateMountTarget` places an ENI as the caller) | ✅ Fixed — added ENI create/delete/modify to the build statement. |
+
+**Result:** with the corrected policy, the **entire lifecycle (`apply` + `destroy`)
+runs on `nfs-harness-tight` alone** — no broad fallback, no `-refresh=false`, no
+out-of-band steps. Validated 2026-06-09.
 
 **Workarounds used during bring-up** (all documented in the gap ledger):
 - Flip `aws_profile` to broad to get past tight gaps.
@@ -169,7 +174,7 @@ resource or carry no request tags. The deploy surfaced these, in order:
 - IAM gaps characterized; corrected tight policy drafted.
 
 **Remaining:**
-1. Finalize the tight policy (the `RequestTag`-on-parent-resource fix, finding #7).
+1. ~~Finalize the tight policy~~ — done; full apply+destroy validated on tight.
 2. `wsl --install` + `bin/bootstrap-wsl.sh` to enable the Ansible `configure` step.
 3. `obs-up` + `./bin/harness configure` → confirm **live NFS metrics in Grafana**
    (node_exporter `mountstats` on the fleet → Prometheus → Grafana dashboard).
