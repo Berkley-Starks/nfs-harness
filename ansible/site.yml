@@ -1,0 +1,26 @@
+###############################################################################
+# Harness config layer.
+#
+# Play 1 — node_exporter on EVERY harness host (clients + self-managed server),
+#          so Prometheus has something to scrape. mountstats collector is on, so
+#          NFS *client* I/O shows up as metrics, not just host vitals.
+#
+# Play 2 — clients only: mount the resolved NFS endpoint, then build + run the
+#          workload container against that mount.
+#
+# Required extra-vars (bin/harness injects them from `terraform output`):
+#   nfs_endpoint, nfs_export_path, nfs_backend
+###############################################################################
+
+- name: Instrument all harness hosts
+  hosts: all
+  become: true
+  roles:
+    - node_exporter
+
+- name: Configure NFS clients and start the workload
+  hosts: clients
+  become: true
+  roles:
+    - nfs_client
+    - workload

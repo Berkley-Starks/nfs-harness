@@ -1,0 +1,5 @@
+# Collections the playbook needs. Install once in the control env (WSL):
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: ansible.posix      # mount module (NFS)
+    version: ">=1.5.0"

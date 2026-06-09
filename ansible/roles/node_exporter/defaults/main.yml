@@ -1,0 +1,7 @@
+---
+node_exporter_version: "1.8.2"
+node_exporter_arch: "linux-amd64"
+node_exporter_user: "node_exporter"
+# Collectors that matter for an NFS harness: mountstats + nfs expose NFS client
+# operation counts/latency; the rest are node_exporter defaults.
+node_exporter_extra_flags: "--collector.mountstats --collector.nfs"

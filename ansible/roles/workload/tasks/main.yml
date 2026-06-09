@@ -1,0 +1,55 @@
+---
+# Container runtime. We shell out to the docker CLI rather than the
+# community.docker modules so nodes need no extra python SDK — one less thing to
+# install on cattle.
+- name: Install docker
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Enable and start docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Ship the workload build context to the node
+  ansible.builtin.copy:
+    src: "{{ workload_src }}/"
+    dest: "{{ workload_dest }}/"
+    mode: "0755"
+
+- name: Build the workload image on the node
+  ansible.builtin.command:
+    cmd: "docker build -t {{ workload_image }} {{ workload_dest }}"
+  register: build_result
+  changed_when: "'Successfully built' in build_result.stdout or 'writing image' in (build_result.stderr | default(''))"
+
+- name: Remove any prior workload container
+  ansible.builtin.command:
+    cmd: "docker rm -f {{ workload_container }}"
+  register: rm_result
+  changed_when: rm_result.rc == 0
+  failed_when: false
+
+- name: Run the workload container against the NFS mount
+  ansible.builtin.command:
+    cmd: >-
+      docker run -d
+      --name {{ workload_container }}
+      --restart unless-stopped
+      -v {{ workload_nfs_mount }}:/data
+      {% for k, v in workload_env.items() %}-e {{ k }}={{ v }} {% endfor %}
+      {{ workload_image }}
+  register: run_result
+  changed_when: run_result.rc == 0
+
+- name: Show running workload container
+  ansible.builtin.command:
+    cmd: "docker ps --filter name={{ workload_container }} --format '{{ '{{' }}.Names{{ '}}' }} {{ '{{' }}.Status{{ '}}' }}'"
+  changed_when: false
+  register: ps_result
+
+- name: Workload status
+  ansible.builtin.debug:
+    msg: "{{ ps_result.stdout }}"

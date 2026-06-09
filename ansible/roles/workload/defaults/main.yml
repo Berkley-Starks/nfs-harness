@@ -1,0 +1,16 @@
+---
+workload_src: "{{ playbook_dir }}/../workload"   # build context shipped to nodes
+workload_dest: /opt/nfs-harness/workload
+workload_image: nfs-harness-workload
+workload_container: nfs-harness-workload
+workload_nfs_mount: /mnt/nfs
+
+# fio knobs handed to the container (see workload/run-load.sh). Tune the load
+# profile here without rebuilding anything else.
+workload_env:
+  RW: randrw
+  BLOCK_SIZE: 64k
+  FILE_SIZE: 512M
+  NUMJOBS: "4"
+  RUNTIME: "120"
+  LOOP: "true"

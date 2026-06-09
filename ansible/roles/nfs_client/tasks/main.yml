@@ -1,0 +1,29 @@
+---
+- name: Fail fast if no NFS endpoint was provided
+  ansible.builtin.assert:
+    that:
+      - nfs_endpoint | length > 0
+    fail_msg: "nfs_endpoint is empty — pass it via -e (bin/harness reads it from terraform output)."
+
+- name: Install NFS client utilities
+  ansible.builtin.dnf:
+    name: nfs-utils
+    state: present
+
+- name: Ensure mount point exists
+  ansible.builtin.file:
+    path: "{{ nfs_mount_point }}"
+    state: directory
+    mode: "0777"
+
+- name: Mount the NFS share
+  ansible.posix.mount:
+    path: "{{ nfs_mount_point }}"
+    src: "{{ nfs_endpoint }}:{{ nfs_export_path }}"
+    fstype: "{{ nfs_fstype }}"
+    opts: "{{ nfs_mount_opts }}"
+    state: mounted
+
+- name: Confirm the mount is live
+  ansible.builtin.command: findmnt --target {{ nfs_mount_point }}
+  changed_when: false
