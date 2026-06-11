@@ -123,6 +123,12 @@ variable "server_instance_type" {
   default     = "c5n.large"
 }
 
+variable "server_root_volume_gb" {
+  description = "Root volume size (GB) for the self-managed NFS server. The export (/srv/nfs/share) lives here, so it must hold the workload's working set: fio writes FILE_SIZE x NUMJOBS per client (default 2 GB) across all clients. The AL2023 default root (~8 GB) overflows past a few clients, so default generously."
+  type        = number
+  default     = 100
+}
+
 ###############################################################################
 # Network placement — cluster placement group for low-latency, low-variance
 # networking between the NFS server and clients on the same AZ. Pairs with the

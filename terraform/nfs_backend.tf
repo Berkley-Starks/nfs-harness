@@ -66,6 +66,17 @@ resource "aws_launch_template" "nfs_server" {
 
   vpc_security_group_ids = [aws_security_group.nfs_server.id]
 
+  # The export (/srv/nfs/share) lives on the root volume, so size it for the
+  # workload's working set — the AL2023 default (~8 GB) fills past a few clients.
+  block_device_mappings {
+    device_name = data.aws_ami.al2023.root_device_name
+    ebs {
+      volume_size           = var.server_root_volume_gb
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
   # Conditionally request spot. When on_demand, omit the spot block entirely.
   dynamic "instance_market_options" {
     for_each = var.server_capacity_type == "spot" ? [1] : []
