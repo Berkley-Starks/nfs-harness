@@ -91,7 +91,12 @@ configure() {
   sleep 20  # let cloud-init + sshd settle; ansible retries below cover the rest
 
   say "configuring fleet (node_exporter, mount $endpoint:$export_path, workload)"
-  ( cd "$ANSIBLE_DIR" && ansible-playbook site.yml \
+  # ANSIBLE_CONFIG is set explicitly because a world-writable cwd (e.g. a /mnt/c
+  # WSL mount) makes Ansible silently ignore ./ansible.cfg — which would drop the
+  # inventory and skip every play. -i is passed directly for the same reason.
+  ( cd "$ANSIBLE_DIR" && \
+    ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg" ANSIBLE_HOST_KEY_CHECKING=False \
+    ansible-playbook -i "$ANSIBLE_DIR/inventory/hosts.ini" site.yml \
       --private-key "$SSH_KEY" \
       -e "nfs_endpoint=$endpoint" \
       -e "nfs_export_path=$export_path" \
