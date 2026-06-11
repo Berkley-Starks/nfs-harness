@@ -1,0 +1,7 @@
+# Claude Code local context — kept locally, not published
+CLAUDE.md
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db

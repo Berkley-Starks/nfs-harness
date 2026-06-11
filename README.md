@@ -148,7 +148,6 @@ hold sustained, scrape-able load across the full test window.
 
 ```
 nfs-harness/
-├── CLAUDE.md                       # full project context + architecture principles
 ├── README.md                       # you are here
 ├── docs/
 │   ├── SETUP_GUIDE.md              # from-scratch setup/ops guide + troubleshooting
@@ -261,5 +260,4 @@ This is a working PoC; these are the next features on the roadmap (not yet built
 - Wire in the actual storage product as a third `nfs_backend` option.
 - CI that runs `terraform validate` + `tflint` + a plan on PRs.
 
-See [`CLAUDE.md`](CLAUDE.md) for architectural principles and
-[`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md) for a from-scratch setup + troubleshooting guide.
+See [`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md) for a from-scratch setup + troubleshooting guide.
