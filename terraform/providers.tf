@@ -12,8 +12,8 @@ terraform {
     }
   }
 
-  # Local state for now. To productionize (and as a talking point in a design review),
-  # swap this for an S3 backend + DynamoDB lock table:
+  # Local state for now. To productionize (and as a talking point in a design
+  # review), swap this for an S3 backend + DynamoDB lock table:
   #
   # backend "s3" {
   #   bucket         = "your-tfstate-bucket"
