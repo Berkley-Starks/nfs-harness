@@ -123,7 +123,13 @@ cmd_up() {
       --instance)        extra+=("-var" "client_instance_type=$val") ;; # client fleet size, e.g. t3.small
       --server-instance) extra+=("-var" "server_instance_type=$val") ;; # self-managed server size
       --clients)         extra+=("-var" "client_count=$val") ;;
-      --capacity)        extra+=("-var" "client_capacity_type=$val") ;; # spot | on_demand
+      # --capacity sets BOTH tiers in one switch (the common case: a whole run
+      # spot for light testing, or on_demand for a clean benchmark). The per-tier
+      # flags override it when they differ — put them AFTER --capacity (last
+      # -var for a variable wins).
+      --capacity)        extra+=("-var" "client_capacity_type=$val" "-var" "server_capacity_type=$val") ;; # spot | on_demand
+      --client-capacity) extra+=("-var" "client_capacity_type=$val") ;; # spot | on_demand (client tier only)
+      --server-capacity) extra+=("-var" "server_capacity_type=$val") ;; # spot | on_demand (server tier only)
       *) die "unknown flag to up: $key" ;;
     esac
   done
@@ -195,10 +201,13 @@ harness — ephemeral NFS test harness control
                    --nfs efs|self_managed     backend            (default efs)
                    --instance TYPE            client fleet size  (default t3.small)
                    --clients N                fleet count        (default 3)
-                   --capacity spot|on_demand  purchase option
+                   --capacity spot|on_demand  purchase option, BOTH tiers
+                   --client-capacity VAL      override client tier only
+                   --server-capacity VAL      override server tier only
                    --server-instance TYPE     self-managed server size
                    --no-config                skip the ansible step
-                 e.g.  ./harness up --nfs=self_managed --instance=t3.medium --clients=10
+                 e.g.  ./harness up --nfs=self_managed --clients=10 --capacity=spot
+                 e.g.  ./harness up --capacity=spot --server-capacity=on_demand
   configure      (re)run ansible against the current fleet
   down           destroy the test plane (keep observability + network + guardrail)
   obs-up         bring up Prometheus/Grafana (independent lifecycle)

@@ -127,8 +127,10 @@ cp terraform/observability/terraform.tfvars.example terraform/observability/terr
 ```
 
 `harness up` flags: `--clients N`, `--backend efs|self_managed`,
-`--capacity spot|on_demand`, `--no-config` (skip Ansible). Raw `terraform`
-plan/apply/validate still works inside `terraform/` and `terraform/observability/`.
+`--capacity spot|on_demand` (both tiers; override one with `--client-capacity` /
+`--server-capacity`), `--instance` / `--server-instance TYPE`, `--no-config`
+(skip Ansible). Raw `terraform` plan/apply/validate still works inside
+`terraform/` and `terraform/observability/`.
 
 ---
 

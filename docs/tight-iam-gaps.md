@@ -120,7 +120,12 @@ and so aren't covered by the tag-conditioned create grants.
   - Or grant the deploy user `iam:CreateServiceLinkedRole` scoped to
     `arn:aws:iam::*:role/aws-service-role/spot.amazonaws.com/*`.
   - **Workaround in use:** `client_capacity_type = "on_demand"` (no SLR needed).
-- **Status:** open — spot disabled until the SLR exists; on-demand for now.
+- **Status:** RESOLVED 2026-06-11. The `SpotServiceLinkedRole` statement in the
+  tight policy grants the scoped `iam:CreateServiceLinkedRole`, and the role was
+  created with it:
+  `aws iam create-service-linked-role --profile nfs-harness-tight --aws-service-name spot.amazonaws.com`
+  → returned `arn:aws:iam::<acct>:role/aws-service-role/spot.amazonaws.com/AWSServiceRoleForEC2Spot`.
+  Spot now launches on tight; `--capacity spot` (both tiers) works.
 
 ### 6. `aws_iam_role_policy.teardown` removed from TF state (workaround)
 - Because neither profile has `iam:GetRolePolicy`, that resource was stuck
