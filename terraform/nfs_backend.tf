@@ -98,6 +98,9 @@ resource "aws_instance" "nfs_server" {
 
   subnet_id = aws_subnet.harness.id
 
+  # Low-latency, low-variance path to the clients. null when the PG is disabled.
+  placement_group = local.server_placement_group
+
   tags = {
     Name      = "${var.project_name}-nfs-server"
     Role      = "nfs-server"

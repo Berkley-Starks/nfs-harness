@@ -23,7 +23,7 @@ locals {
   # is simply absent from the remote-state object when the backend is EFS.
   server_private_ip = try(local.ts.server_private_ip, null)
   server_targets    = local.server_private_ip != null ? ["${local.server_private_ip}:9100"] : []
-  scrape_targets = concat(local.client_targets, local.server_targets)
+  scrape_targets    = concat(local.client_targets, local.server_targets)
 
   # Rendered as a YAML inline-sequence for prometheus.yml: 'a:9100','b:9100'
   scrape_targets_yaml = join(", ", [for t in local.scrape_targets : "'${t}'"])

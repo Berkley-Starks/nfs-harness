@@ -67,6 +67,10 @@ resource "aws_instance" "client" {
 
   subnet_id = aws_subnet.harness.id
 
+  # Joins the server's cluster PG only when cluster_clients is set AND the client
+  # type supports it (network-optimized, not the t3 default). null otherwise.
+  placement_group = local.clients_placement_group
+
   tags = {
     Name      = "${var.project_name}-client-${count.index}"
     Role      = "client"

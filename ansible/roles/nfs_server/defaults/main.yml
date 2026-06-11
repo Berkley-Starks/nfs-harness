@@ -1,0 +1,13 @@
+---
+# Optional, reproducible egress bandwidth cap on the NFS server's primary NIC.
+#
+# 0 = unlimited (the default — let the network-optimized instance run at its
+# real line rate). Set to a positive Mbit/s value ONLY when a constrained link
+# is a deliberate variable in the experiment, so the constraint is documented in
+# source and identical run to run — never an accident of burst-credit
+# exhaustion on a burstable instance.
+#
+# This shapes EGRESS (server -> clients, i.e. the READ path). To constrain the
+# write/ingress path instead, shape the clients' egress or add an ifb device
+# here; left as a documented extension to keep the default path simple.
+server_egress_cap_mbit: 0

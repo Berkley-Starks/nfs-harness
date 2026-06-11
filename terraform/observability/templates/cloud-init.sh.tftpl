@@ -118,6 +118,20 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
       "type": "timeseries", "title": "NFS throughput read+write (bytes/s)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_read_bytes_total[1m]) + rate(node_mountstats_nfs_write_bytes_total[1m]))", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Network transmit (bytes/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [ { "expr": "rate(node_network_transmit_bytes_total{device!~\"lo\"}[1m])", "legendFormat": "{{instance}} {{device}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "ENA NIC allowance exceeded (events/s) — >0 means the instance is capped",
+      "description": "ENA driver counters from node_exporter's ethtool collector. Any sustained non-zero value means traffic is being shaped by the instance's bandwidth allowance — the NIC, not the workload, is the limit.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "rate(node_ethtool_bw_in_allowance_exceeded[1m])", "legendFormat": "{{instance}} rx-allowance" },
+        { "expr": "rate(node_ethtool_bw_out_allowance_exceeded[1m])", "legendFormat": "{{instance}} tx-allowance" }
+      ]
     }
   ]
 }

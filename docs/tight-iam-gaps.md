@@ -164,6 +164,26 @@ and so aren't covered by the tag-conditioned create grants.
   (the mount-target ENI is EFS-managed/untagged, so it can't be tag-gated).
 - **Status:** fix in the policy file; pending the next apply to confirm.
 
+### 9. `ec2:CreatePlacementGroup` / `ec2:DeletePlacementGroup` — added for cluster PG
+- **When:** Platform-hardening change (2026-06-11). The benchmark fix moves the
+  self-managed server to a network-optimized type AND into a cluster placement
+  group (`aws_placement_group.cluster`). The original tight policy had no
+  placement-group verbs, so `terraform apply` would deny `CreatePlacementGroup`
+  (and `destroy` would deny `DeletePlacementGroup`).
+- **Root cause:** new resource type not present when the policy was written.
+  `DescribePlacementGroups` is already covered by the `ec2:Describe*` wildcard in
+  the ReadOnly statement.
+- **Fix (applied to the policy file):**
+  - `ec2:CreatePlacementGroup` → added to `Ec2BuildAndWireUnconditioned`
+    (Resource `*`; PG create supports RequestTag but the build statement is
+    unconditioned by design — see gap #7).
+  - `ec2:DeletePlacementGroup` → added to `Ec2DestroyAndModifyTagged`
+    (ResourceTag/Project condition; Terraform `default_tags` stamps the PG with
+    `Project=nfs-harness` on create, so the condition matches). If a future AWS
+    change makes `DeletePlacementGroup` not honor the ResourceTag key, move it to
+    the unconditioned build statement.
+- **Status:** fix in the policy file; pending the next apply to confirm.
+
 ## Still UNKNOWN (resolve on next apply)
 
 - `ec2:CreateSubnet/InternetGateway/RouteTable/Route/AssociateRouteTable/CreateSecurityGroup/AuthorizeSecurityGroup*`

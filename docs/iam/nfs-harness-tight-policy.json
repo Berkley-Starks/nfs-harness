@@ -24,6 +24,7 @@
 				"ec2:CreateNetworkInterface",
 				"ec2:DeleteNetworkInterface",
 				"ec2:ModifyNetworkInterfaceAttribute",
+				"ec2:CreatePlacementGroup",
 				"ec2:CreateTags"
 			],
 			"Resource": "*"
@@ -52,6 +53,7 @@
 				"ec2:ModifyVpcAttribute",
 				"ec2:ModifySubnetAttribute",
 				"ec2:DeleteVolume",
+				"ec2:DeletePlacementGroup",
 				"ec2:DeleteTags"
 			],
 			"Resource": "*",

@@ -108,17 +108,28 @@ the harness created, measured by a dashboard that cannot see latency.
 
 ## Fixes — checklist
 
-### A. Platform (do these first)
-- [ ] Move the NFS server off any burstable instance class to guaranteed-bandwidth
+### A. Platform (do these first) — DONE 2026-06-11
+- [x] Move the NFS server off any burstable instance class to guaranteed-bandwidth
       (c5n / m5n / m6in), same AZ, cluster placement group. Never benchmark on
       burstable — burst credits make results a function of wall-clock time, not
       your variables.
-- [ ] If a constrained link is wanted as a *variable*, impose it explicitly with
+      → `server_instance_type` default is now `c5n.large` (network-optimized,
+      guaranteed bandwidth); new `aws_placement_group.cluster` (strategy=cluster,
+      single AZ) with the server in it by default. Clients join only when
+      `cluster_clients=true` and they're a non-burstable type (t3 isn't a valid
+      cluster-PG type). IAM: added `ec2:Create/DeletePlacementGroup` (gap #9).
+- [x] If a constrained link is wanted as a *variable*, impose it explicitly with
       `tc` so it's reproducible and documented, not an accident of credit
       exhaustion.
-- [ ] Add node_exporter's `ethtool` collector and chart ENA
+      → new `nfs_server` Ansible role applies a `tbf` egress cap from
+      `server_egress_cap_mbit` (default 0 = unlimited); documented, version-
+      controlled, identical run to run.
+- [x] Add node_exporter's `ethtool` collector and chart ENA
       `bw_in_allowance_exceeded` / `bw_out_allowance_exceeded` to confirm when the
       NIC cap is the limit.
+      → `--collector.ethtool` added to node_exporter (with `CAP_NET_ADMIN` on the
+      systemd unit so the non-root service can read the counters); new Grafana
+      panel "ENA NIC allowance exceeded (events/s)" plus a network-transmit panel.
 
 ### B. Generators (the biggest design flaw)
 - [ ] Switch from closed-loop to **open-loop, fixed-rate** generators

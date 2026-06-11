@@ -80,6 +80,11 @@ output "subnet_az" {
   value       = aws_subnet.harness.availability_zone
 }
 
+output "placement_group" {
+  description = "Cluster placement group the server (and optionally clients) join (null when disabled)."
+  value       = var.enable_placement_group ? one(aws_placement_group.cluster[*].name) : null
+}
+
 output "teardown_lambda" {
   description = "Name of the auto-teardown guardrail Lambda (null when disabled)."
   value       = var.teardown_enabled ? aws_lambda_function.teardown[0].function_name : null

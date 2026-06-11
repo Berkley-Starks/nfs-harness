@@ -86,6 +86,16 @@ both planes sit in.
    (container runtime, NFS mount, launch the workload). Container = the workload
    itself. Each layer stays in its lane.
 
+7. **Benchmark correctness: take the network out of the experiment.** The
+   self-managed server defaults to a **network-optimized** instance (`c5n.large`)
+   and sits in a single-AZ **cluster placement group** — never a burstable type,
+   whose network baseline collapses once burst credits drain and makes results a
+   function of wall-clock time. node_exporter's `ethtool` collector charts the ENA
+   **`bw_in/out_allowance_exceeded`** counters, so a NIC bandwidth cap is *visible*
+   rather than masquerading as "slow storage." And if a constrained link is a
+   deliberate variable, a `tc` egress cap (`server_egress_cap_mbit`) imposes it
+   explicitly and reproducibly instead of leaving it to credit exhaustion.
+
 ---
 
 ## Quick start

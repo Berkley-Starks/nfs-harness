@@ -118,9 +118,28 @@ variable "client_instance_type" {
 }
 
 variable "server_instance_type" {
-  description = "Instance type for the self-managed NFS server (when nfs_backend = self_managed)."
+  description = "Instance type for the self-managed NFS server (when nfs_backend = self_managed). Default is a network-optimized (c5n) type with guaranteed bandwidth: never benchmark on burstable (t3/t2), where the network baseline collapses to a few hundred Mbps once burst credits drain and results become a function of wall-clock time, not your variables."
   type        = string
-  default     = "t3.medium"
+  default     = "c5n.large"
+}
+
+###############################################################################
+# Network placement — cluster placement group for low-latency, low-variance
+# networking between the NFS server and clients on the same AZ. Pairs with the
+# network-optimized server default above: the two together remove the network
+# from the list of accidental confounds in a bandwidth/latency benchmark.
+###############################################################################
+
+variable "enable_placement_group" {
+  description = "Create a cluster placement group and place the self-managed NFS server in it. Cluster PGs require a single AZ (the harness already pins one) and instance types that support them (network-optimized current-gen; the c5n server default qualifies)."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_clients" {
+  description = "Also place the client fleet in the cluster placement group. Off by default because the cheap t3 client default is NOT a supported cluster-PG type — set client_instance_type to a network-optimized type (e.g. c5n.large) before enabling this for a true co-located low-latency run."
+  type        = bool
+  default     = false
 }
 
 ###############################################################################

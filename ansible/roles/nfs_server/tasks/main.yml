@@ -1,0 +1,24 @@
+---
+# Apply (or clear) a reproducible tbf egress cap on the server's primary
+# interface. See defaults/main.yml for the rationale.
+
+- name: Resolve primary network interface
+  ansible.builtin.set_fact:
+    nfs_server_iface: "{{ ansible_default_ipv4.interface }}"
+
+- name: Apply tbf egress cap on the server NIC
+  ansible.builtin.command:
+    cmd: >-
+      tc qdisc replace dev {{ nfs_server_iface }} root
+      tbf rate {{ server_egress_cap_mbit }}mbit burst 32kbit latency 400ms
+  when: server_egress_cap_mbit | int > 0
+  changed_when: true
+
+- name: Remove any tbf egress cap (uncapped run)
+  ansible.builtin.command:
+    cmd: tc qdisc del dev {{ nfs_server_iface }} root
+  when: server_egress_cap_mbit | int <= 0
+  register: tc_clear
+  changed_when: tc_clear.rc == 0
+  # No root qdisc to delete is the normal/uncapped state — not a failure.
+  failed_when: tc_clear.rc != 0 and 'RTNETLINK' not in tc_clear.stderr and 'Cannot' not in tc_clear.stderr

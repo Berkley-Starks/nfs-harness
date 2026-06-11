@@ -2,14 +2,18 @@
 # Harness config layer.
 #
 # Play 1 — node_exporter on EVERY harness host (clients + self-managed server),
-#          so Prometheus has something to scrape. mountstats collector is on, so
-#          NFS *client* I/O shows up as metrics, not just host vitals.
+#          so Prometheus has something to scrape. mountstats + ethtool collectors
+#          are on, so NFS client I/O and ENA NIC-allowance counters both show up.
 #
-# Play 2 — clients only: mount the resolved NFS endpoint, then build + run the
+# Play 2 — self-managed server only: apply the optional, reproducible tbf egress
+#          cap (server_egress_cap_mbit; no-op at the default 0).
+#
+# Play 3 — clients only: mount the resolved NFS endpoint, then build + run the
 #          workload container against that mount.
 #
 # Required extra-vars (bin/harness injects them from `terraform output`):
 #   nfs_endpoint, nfs_export_path, nfs_backend
+# Optional: server_egress_cap_mbit (e.g. -e server_egress_cap_mbit=256)
 ###############################################################################
 
 - name: Instrument all harness hosts
@@ -17,6 +21,12 @@
   become: true
   roles:
     - node_exporter
+
+- name: Apply optional reproducible network shaping on the NFS server
+  hosts: nfs_server
+  become: true
+  roles:
+    - nfs_server
 
 - name: Configure NFS clients and start the workload
   hosts: clients
