@@ -19,7 +19,10 @@ locals {
   # node_exporter scrape targets (:9100). Clients always; the self-managed NFS
   # server too when present. EFS has no host to scrape.
   client_targets = [for ip in local.ts.client_private_ips : "${ip}:9100"]
-  server_targets = local.ts.server_private_ip != null ? ["${local.ts.server_private_ip}:9100"] : []
+  # try(): Terraform omits null-valued outputs from state, so server_private_ip
+  # is simply absent from the remote-state object when the backend is EFS.
+  server_private_ip = try(local.ts.server_private_ip, null)
+  server_targets    = local.server_private_ip != null ? ["${local.server_private_ip}:9100"] : []
   scrape_targets = concat(local.client_targets, local.server_targets)
 
   # Rendered as a YAML inline-sequence for prometheus.yml: 'a:9100','b:9100'
@@ -79,6 +82,13 @@ resource "aws_instance" "prometheus" {
     scrape_targets_yaml    = local.scrape_targets_yaml
     grafana_admin_password = var.grafana_admin_password
   })
+
+  # Root needs headroom for the Prometheus + Grafana images; the AL2023 default
+  # is too small and docker image extraction fails with "no space left".
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
 
   # Recreate the box, not the data: changes to user-data replace the instance,
   # but the volume + attachment below re-establish the same metrics on boot.

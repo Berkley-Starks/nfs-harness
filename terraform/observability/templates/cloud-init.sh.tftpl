@@ -111,8 +111,13 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
     },
     {
       "type": "timeseries", "title": "NFS client operations/s (mountstats)",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
-      "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_total_operations[1m]))", "legendFormat": "{{instance}}" } ]
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_operations_requests_total[1m]))", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "NFS throughput read+write (bytes/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_read_bytes_total[1m]) + rate(node_mountstats_nfs_write_bytes_total[1m]))", "legendFormat": "{{instance}}" } ]
     }
   ]
 }
