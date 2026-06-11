@@ -234,6 +234,25 @@ IAM · Amazon Linux 2023.
   Terraform state stale by design — cost-stop beats state-tidiness for a backstop;
   reconcile with the next `apply`.
 
+## TODO / planned improvements
+
+This is a working PoC; these are the next features on the roadmap (not yet built):
+
+- [ ] **Mixed-backend comparison runs.** Today one `harness up` stands up a single
+  backend (`--nfs efs` *or* `--nfs self_managed`) with one client count. Planned: a
+  single run that stands up **both** backends at once with independent client
+  counts — e.g. `harness up --efs-clients 5 --self-managed-clients 10` — so the
+  same workload can be A/B'd against EFS and a self-managed server side by side in
+  one Grafana view. (Needs the backend resources de-coupled from the single
+  `nfs_backend` toggle, separate client pools per backend, and per-pool scrape
+  labels.)
+- [ ] **Self-managed server sizing & scale.** `--server-instance TYPE` already
+  exists; add `--servers N` for a multi-server self-managed backend (and per-pool
+  instance types) so the server tier can be scaled/compared too. *(Nice-to-have.)*
+- [ ] **Per-run guardrail TTL flag.** Surface `max_test_plane_age_hours` as a
+  `harness up --ttl` flag instead of a tfvars edit (currently bumped manually for
+  long/overnight runs).
+
 ## Possible extensions
 
 - S3 remote state + DynamoDB locking (upgrade path is stubbed in `providers.tf`).
