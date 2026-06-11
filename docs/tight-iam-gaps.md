@@ -189,6 +189,29 @@ and so aren't covered by the tag-conditioned create grants.
     the unconditioned build statement.
 - **Status:** fix in the policy file; pending the next apply to confirm.
 
+### 10. `ec2:CancelSpotInstanceRequests` — DENY on destroy of spot instances
+- **When:** first spot `down` (2026-06-11). `--capacity spot` launches fine
+  (RunInstances + the SLR from gap #5), but `terraform destroy` of a spot
+  `aws_instance` cancels the underlying spot request, and tight had no
+  `ec2:CancelSpotInstanceRequests`. All 6 destroys failed 403; the instances kept
+  running (the down aborted before terminating them).
+- **Root cause:** spot-only verb absent from the policy (spot was never exercised
+  before — on_demand was the workaround for gap #5).
+- **Fix (applied to the policy file):** added `ec2:CancelSpotInstanceRequests` to
+  the **unconditioned** `Ec2BuildAndWireUnconditioned` statement. The
+  spot-instances-request resource is NOT tagged (the launch template's
+  `tag_specifications` only cover `instance`), so a `ResourceTag/Project`
+  condition would never match — hence unconditioned, like the ENI verbs.
+  - **Tighter alternative (future):** add a `tag_specifications` block with
+    `resource_type = "spot-instances-request"` (Project tag) to the client and
+    server launch templates, then move the cancel into the ResourceTag-gated
+    destroy statement.
+- **Recovery used:** ran the `down` via `nfs-harness-broad`
+  (`-var aws_profile=nfs-harness-broad`), which has account-wide EC2.
+- **Status:** fixed in the policy file; **the live `nfs-harness-tight` user still
+  needs the updated policy pasted in** before a spot `down` works on tight.
+  Until then, destroy spot fleets with broad.
+
 ## Still UNKNOWN (resolve on next apply)
 
 - `ec2:CreateSubnet/InternetGateway/RouteTable/Route/AssociateRouteTable/CreateSecurityGroup/AuthorizeSecurityGroup*`

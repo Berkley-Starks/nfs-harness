@@ -25,6 +25,7 @@
 				"ec2:DeleteNetworkInterface",
 				"ec2:ModifyNetworkInterfaceAttribute",
 				"ec2:CreatePlacementGroup",
+				"ec2:CancelSpotInstanceRequests",
 				"ec2:CreateTags"
 			],
 			"Resource": "*"
