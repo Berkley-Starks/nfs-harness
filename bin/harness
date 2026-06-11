@@ -143,6 +143,14 @@ cmd_up() {
   done
 
   need "$TF"
+  # Pre-flight the config toolchain BEFORE creating any AWS resources. Running
+  # `up` from a shell without ansible-playbook/jq (e.g. Git Bash on Windows)
+  # would otherwise stand up a billed fleet it can't configure. Fail fast unless
+  # configuration was explicitly skipped.
+  if [ "${NO_CONFIG:-0}" != "1" ]; then
+    command -v ansible-playbook >/dev/null 2>&1 || die "ansible-playbook not found — run the harness under WSL/Linux (see docs/SETUP_GUIDE.md), or pass --no-config to stand up infra only."
+    command -v jq >/dev/null 2>&1 || die "jq not found — run under WSL/Linux, or pass --no-config."
+  fi
   tf init -input=false >/dev/null
   say "applying test plane..."
   tf apply -input=false -auto-approve -var test_plane_enabled=true "${extra[@]}"
