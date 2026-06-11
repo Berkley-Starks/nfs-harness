@@ -83,6 +83,12 @@ resource "aws_instance" "prometheus" {
     grafana_admin_password = var.grafana_admin_password
   })
 
+  # The scrape-target list is baked into user_data, so when the fleet changes the
+  # box MUST be rebuilt to pick up the new prometheus.yml. Without this, the AWS
+  # provider updates user_data in state but never re-runs cloud-init (default is
+  # user_data_replace_on_change = false), leaving Prometheus on stale targets.
+  user_data_replace_on_change = true
+
   # Root needs headroom for the Prometheus + Grafana images; the AL2023 default
   # is too small and docker image extraction fails with "no space left".
   root_block_device {
