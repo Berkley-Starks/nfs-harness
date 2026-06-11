@@ -4,7 +4,15 @@
 
 - name: Resolve primary network interface
   ansible.builtin.set_fact:
-    nfs_server_iface: "{{ ansible_default_ipv4.interface }}"
+    nfs_server_iface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+# tc ships in iproute-tc, which is NOT installed on AL2023 by default. Only pull
+# it in when we actually need to shape — the uncapped default touches no tc.
+- name: Ensure tc is installed (only when shaping)
+  ansible.builtin.dnf:
+    name: iproute-tc
+    state: present
+  when: server_egress_cap_mbit | int > 0
 
 - name: Apply tbf egress cap on the server NIC
   ansible.builtin.command:
@@ -14,10 +22,20 @@
   when: server_egress_cap_mbit | int > 0
   changed_when: true
 
+# Uncapped run: clear a prior cap only if tc is present. No tc binary means no
+# cap was ever applied, so there is nothing to undo — skip cleanly.
+- name: Check whether tc is present
+  ansible.builtin.stat:
+    path: /usr/sbin/tc
+  register: tc_bin
+  when: server_egress_cap_mbit | int <= 0
+
 - name: Remove any tbf egress cap (uncapped run)
   ansible.builtin.command:
     cmd: tc qdisc del dev {{ nfs_server_iface }} root
-  when: server_egress_cap_mbit | int <= 0
+  when:
+    - server_egress_cap_mbit | int <= 0
+    - tc_bin.stat.exists | default(false)
   register: tc_clear
   changed_when: tc_clear.rc == 0
   # No root qdisc to delete is the normal/uncapped state — not a failure.
