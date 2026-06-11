@@ -11,14 +11,16 @@ region = "us-east-1"
 #   aws_profile = "nfs-harness-broad"
 aws_profile = "nfs-harness-tight"
 
-# Backend: start with efs to prove the harness fast, flip to self_managed later.
-nfs_backend = "efs"
+# Per-run knobs are FLAGS on `harness up` — no need to edit this file to change them:
+#   ./bin/harness up --nfs self_managed --instance t3.medium --clients 10
+# Unset, they fall back to the terraform defaults: nfs_backend=efs,
+# client_instance_type=t3.small, client_count=3. Pin one here only if you want a
+# different *default* for plain `terraform apply`.
+# nfs_backend          = "efs"
+# client_instance_type = "t3.small"
+# client_count         = 3
 
-# Fleet scale (the "at scale" knob).
-client_count         = 3
-client_instance_type = "t3.small"
-
-# Capacity types — both default to spot. Flip server to on_demand for a clean
-# uninterrupted benchmark run:
-# client_capacity_type = "spot"
-# server_capacity_type = "on_demand"
+# Capacity types default to spot in code; on_demand here is the safe env default
+# (spot needs the EC2-Spot service-linked role). Override per run with --capacity.
+client_capacity_type = "on_demand"
+server_capacity_type = "on_demand"

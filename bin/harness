@@ -109,14 +109,22 @@ configure() {
 # commands
 ###############################################################################
 cmd_up() {
-  local extra=()
+  # Per-run knobs as flags so you never edit tfvars to change a run. Each accepts
+  # both "--flag value" and "--flag=value". Anything not passed falls back to the
+  # terraform variable defaults (nfs_backend=efs, client_instance_type=t3.small,
+  # client_count=3) or your tfvars (ssh key, admin_cidr, capacity, profile).
+  local extra=() key val
   while [ $# -gt 0 ]; do
-    case "$1" in
-      --clients)  extra+=("-var" "client_count=$2"); shift 2 ;;
-      --backend)  extra+=("-var" "nfs_backend=$2"); shift 2 ;;
-      --capacity) extra+=("-var" "client_capacity_type=$2"); shift 2 ;;
-      --no-config) NO_CONFIG=1; shift ;;
-      *) die "unknown flag to up: $1" ;;
+    if [ "$1" = "--no-config" ]; then NO_CONFIG=1; shift; continue; fi
+    if [[ "$1" == *=* ]]; then key="${1%%=*}"; val="${1#*=}"; shift
+    else key="$1"; val="${2:-}"; shift 2; fi
+    case "$key" in
+      --nfs|--backend)   extra+=("-var" "nfs_backend=$val") ;;          # efs | self_managed
+      --instance)        extra+=("-var" "client_instance_type=$val") ;; # client fleet size, e.g. t3.small
+      --server-instance) extra+=("-var" "server_instance_type=$val") ;; # self-managed server size
+      --clients)         extra+=("-var" "client_count=$val") ;;
+      --capacity)        extra+=("-var" "client_capacity_type=$val") ;; # spot | on_demand
+      *) die "unknown flag to up: $key" ;;
     esac
   done
 
@@ -182,8 +190,15 @@ usage() {
   cat <<USAGE
 harness — ephemeral NFS test harness control
 
-  up [--clients N] [--backend efs|self_managed] [--capacity spot|on_demand] [--no-config]
-                 stand up the test plane, mount NFS, start the workload
+  up [flags]     stand up the test plane, mount NFS, start the workload.
+                 Per-run flags (also accept --flag=value); unset = terraform defaults:
+                   --nfs efs|self_managed     backend            (default efs)
+                   --instance TYPE            client fleet size  (default t3.small)
+                   --clients N                fleet count        (default 3)
+                   --capacity spot|on_demand  purchase option
+                   --server-instance TYPE     self-managed server size
+                   --no-config                skip the ansible step
+                 e.g.  ./harness up --nfs=self_managed --instance=t3.medium --clients=10
   configure      (re)run ansible against the current fleet
   down           destroy the test plane (keep observability + network + guardrail)
   obs-up         bring up Prometheus/Grafana (independent lifecycle)
