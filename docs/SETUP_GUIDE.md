@@ -3,7 +3,7 @@
 A from-scratch guide to what this project is, how it was set up, how to deploy /
 validate / tear it down, and the real-world gotchas hit along the way. Pairs with
 [CLAUDE.md](../CLAUDE.md) (architecture + principles) and the architecture diagram
-in `NFS_Test_Harness_Architecture_PoC/Diagrams/`.
+in [docs/diagrams/](diagrams/nfs_test_harness_architecture.svg).
 
 ---
 

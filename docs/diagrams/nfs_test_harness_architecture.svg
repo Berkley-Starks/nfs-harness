@@ -1,0 +1,131 @@
+<svg viewBox="0 0 1000 720" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+    </marker>
+    <marker id="arrowScrape" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#0e7490"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="720" fill="#f8fafc"/>
+  <text x="500" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Ephemeral NFS Test Harness — AWS</text>
+  <text x="500" y="56" text-anchor="middle" font-size="13" fill="#64748b">Two-plane design · disposable test plane vs. surviving observability plane · Spot by default (var-flippable)</text>
+
+  <!-- VPC boundary -->
+  <rect x="30" y="80" width="940" height="560" rx="10" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="46" y="100" font-size="12" font-weight="600" fill="#64748b">VPC  (least-privilege security groups between planes)</text>
+
+  <!-- ===================== TEST PLANE ===================== -->
+  <rect x="55" y="120" width="560" height="430" rx="10" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+  <text x="75" y="146" font-size="15" font-weight="700" fill="#b91c1c">TEST PLANE  — system under test</text>
+  <text x="75" y="164" font-size="11" fill="#ef4444">created &amp; destroyed every cycle  (terraform apply / destroy)</text>
+
+  <!-- NFS backend selectable -->
+  <rect x="75" y="180" width="245" height="150" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="86" y="200" font-size="12" font-weight="700" fill="#b91c1c">NFS BACKEND  (selectable var)</text>
+
+  <rect x="90" y="212" width="215" height="48" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="100" y="231" font-size="12" font-weight="600" fill="#0f172a">Option A: EFS (managed)</text>
+  <text x="100" y="248" font-size="10" fill="#64748b">fast harness proof · NFSv4.1 · no server</text>
+
+  <rect x="90" y="266" width="215" height="52" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="100" y="285" font-size="12" font-weight="600" fill="#0f172a">Option B: self-managed NFS (EC2)</text>
+  <text x="100" y="301" font-size="10" fill="#64748b">real server you can break/instrument</text>
+  <text x="100" y="313" font-size="10" fill="#64748b">→ later: the actual product</text>
+  <rect x="247" y="270" width="52" height="16" rx="8" fill="#fef9c3" stroke="#eab308"/>
+  <text x="273" y="282" text-anchor="middle" font-size="9" font-weight="700" fill="#a16207">SPOT*</text>
+
+  <!-- Client fleet -->
+  <rect x="340" y="180" width="255" height="240" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="352" y="200" font-size="12" font-weight="700" fill="#b91c1c">CLIENT FLEET  (N · var-driven)</text>
+  <rect x="540" y="189" width="46" height="16" rx="8" fill="#fef9c3" stroke="#eab308"/>
+  <text x="563" y="201" text-anchor="middle" font-size="9" font-weight="700" fill="#a16207">SPOT</text>
+  <text x="352" y="216" font-size="10" fill="#64748b">cattle: identical, disposable, scale 5→50</text>
+
+  <!-- client nodes -->
+  <g>
+    <rect x="352" y="228" width="110" height="78" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="361" y="245" font-size="11" font-weight="600" fill="#0f172a">EC2 client</text>
+    <rect x="361" y="252" width="92" height="44" rx="4" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="369" y="268" font-size="9.5" fill="#4338ca">workload container</text>
+    <text x="369" y="281" font-size="9" fill="#6366f1">runc/containerd</text>
+    <text x="369" y="292" font-size="9" fill="#6366f1">mounts NFS :2049</text>
+  </g>
+  <g>
+    <rect x="474" y="228" width="110" height="78" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="483" y="245" font-size="11" font-weight="600" fill="#0f172a">EC2 client</text>
+    <rect x="483" y="252" width="92" height="44" rx="4" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="491" y="268" font-size="9.5" fill="#4338ca">workload container</text>
+    <text x="491" y="281" font-size="9" fill="#6366f1">runc/containerd</text>
+    <text x="491" y="292" font-size="9" fill="#6366f1">mounts NFS :2049</text>
+  </g>
+  <text x="468" y="330" text-anchor="middle" font-size="20" fill="#94a3b8" font-weight="700">· · ·</text>
+  <g>
+    <rect x="352" y="342" width="110" height="64" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="361" y="359" font-size="11" font-weight="600" fill="#0f172a">EC2 client</text>
+    <rect x="361" y="366" width="92" height="30" rx="4" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="369" y="385" font-size="9.5" fill="#4338ca">workload container</text>
+  </g>
+  <g>
+    <rect x="474" y="342" width="110" height="64" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="483" y="359" font-size="11" font-weight="600" fill="#0f172a">EC2 client (N)</text>
+    <rect x="483" y="366" width="92" height="30" rx="4" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="491" y="385" font-size="9.5" fill="#4338ca">workload container</text>
+  </g>
+
+  <!-- node_exporter band -->
+  <rect x="352" y="426" width="243" height="26" rx="5" fill="#ecfeff" stroke="#67e8f9"/>
+  <text x="473" y="443" text-anchor="middle" font-size="10.5" font-weight="600" fill="#0e7490">node_exporter on every node  (:9100)</text>
+
+  <!-- capacity type note -->
+  <rect x="75" y="466" width="520" height="74" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="86" y="486" font-size="11" font-weight="700" fill="#a16207">Capacity type — var: capacity_type  (default: spot, both server &amp; clients)</text>
+  <text x="86" y="503" font-size="10" fill="#854d0e">Clients: ideal Spot fit — cattle, interruption-tolerant, 70–90% cheaper. Lose one → run N-1.</text>
+  <text x="86" y="518" font-size="10" fill="#854d0e">Server*: spot OK for load/repro testing; flip to on_demand if you need it to survive a full run</text>
+  <text x="86" y="531" font-size="10" fill="#854d0e">(a reclaimed server interrupts the test). One variable flips either independently.</text>
+
+  <!-- NFS data path arrow -->
+  <line x1="340" y1="266" x2="320" y2="266" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="332" y="258" text-anchor="middle" font-size="9" fill="#475569">mount</text>
+
+  <!-- ===================== OBSERVABILITY PLANE ===================== -->
+  <rect x="645" y="120" width="300" height="300" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="665" y="146" font-size="15" font-weight="700" fill="#1d4ed8">OBSERVABILITY PLANE</text>
+  <text x="665" y="164" font-size="11" fill="#3b82f6">independent lifecycle — SURVIVES test-plane destroy</text>
+
+  <rect x="665" y="180" width="260" height="70" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="677" y="201" font-size="12" font-weight="700" fill="#1d4ed8">Prometheus  (on-demand EC2)</text>
+  <text x="677" y="219" font-size="10" fill="#64748b">compute: created for a run, torn down idle</text>
+  <text x="677" y="234" font-size="10" fill="#16a34a">persistent EBS — re-attaches; data kept</text>
+
+  <rect x="665" y="262" width="260" height="58" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="677" y="283" font-size="12" font-weight="700" fill="#1d4ed8">Grafana / log aggregation</text>
+  <text x="677" y="301" font-size="10" fill="#64748b">dashboards for the run · review after teardown</text>
+
+  <rect x="665" y="332" width="260" height="72" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="677" y="353" font-size="12" font-weight="700" fill="#15803d">CONTROL — harness wrapper</text>
+  <text x="677" y="370" font-size="10" fill="#475569">./harness up --clients N   (terraform apply)</text>
+  <text x="677" y="384" font-size="10" fill="#475569">./harness down            (destroy test plane)</text>
+  <text x="677" y="398" font-size="10" fill="#475569">Terraform + Ansible orchestration</text>
+
+  <!-- scrape arrows from test plane to prometheus -->
+  <path d="M595 439 C 640 439, 640 215, 665 215" fill="none" stroke="#0e7490" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrowScrape)"/>
+  <text x="640" y="350" font-size="9.5" fill="#0e7490" transform="rotate(-78 640 350)">scrape :9100  (out of SUT)</text>
+
+  <!-- ===================== LIFECYCLE LEGEND ===================== -->
+  <rect x="55" y="558" width="890" height="74" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="70" y="578" font-size="12" font-weight="700" fill="#0f172a">Lifecycle &amp; cost discipline</text>
+  <circle cx="78" cy="596" r="5" fill="#fca5a5"/>
+  <text x="90" y="600" font-size="10" fill="#475569">Test plane = ephemeral. Default end-state is destroyed; cost bounded by design.</text>
+  <circle cx="78" cy="613" r="5" fill="#93c5fd"/>
+  <text x="90" y="617" font-size="10" fill="#475569">Observability compute = on-demand. Storage (EBS) persists; instances torn down when idle.</text>
+  <circle cx="78" cy="626" r="5" fill="#86efac"/>
+  <text x="90" y="630" font-size="10" fill="#475569">Instruments still never die WITH the SUT — paused between runs, data intact.</text>
+
+  <!-- layer-ownership legend right -->
+  <text x="600" y="578" font-size="12" font-weight="700" fill="#0f172a">Layer ownership</text>
+  <text x="600" y="598" font-size="10" fill="#475569">Terraform → infrastructure (VPC, backends, fleet, SGs)</text>
+  <text x="600" y="613" font-size="10" fill="#475569">Ansible → config (runtime, mount, launch container)</text>
+  <text x="600" y="628" font-size="10" fill="#475569">Container → the workload itself</text>
+</svg>
