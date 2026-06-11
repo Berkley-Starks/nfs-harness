@@ -19,18 +19,55 @@ under test.
 
 ---
 
-## 2. Prerequisites — what / why / how / where
+## 2. Prerequisites — the control node
 
-| Tool | Why | How / where |
-|---|---|---|
-| **Terraform** ≥1.5 | Infrastructure layer (VPC, backend, fleet, guardrail) | Windows: `winget install Hashicorp.Terraform` (user scope). WSL: HashiCorp apt repo (see `bin/bootstrap-wsl.sh`). |
-| **AWS CLI v2** | Credentials, identity, permission probing | Already present on the workstation; in WSL via `bin/bootstrap-wsl.sh`. |
-| **WSL + Ansible** | Config layer (node_exporter, NFS mount, workload). Ansible has **no native Windows control node**, so it runs from WSL. | `wsl --install` (admin PowerShell + reboot), then `bash bin/bootstrap-wsl.sh`. |
-| **jq** | Builds the Ansible inventory from `terraform output` | Installed by `bin/bootstrap-wsl.sh`. |
-| **Docker** | NOT needed locally — the workload image is **built on each client node** by Ansible, so there's no registry and no local Docker dependency. | n/a |
+You drive the harness from a **control node** that needs four tools:
 
-Terraform runs fine on Windows for the whole infra path. Only the Ansible
-`configure` step needs WSL.
+| Tool | Why |
+|---|---|
+| **Terraform** ≥1.5 | Infrastructure layer (VPC, backend, fleet, guardrail) |
+| **Ansible** | Config layer (node_exporter, NFS mount, workload) |
+| **AWS CLI v2** | Credentials, identity, permission probing |
+| **jq** | Builds the Ansible inventory from `terraform output` |
+
+Docker is **not** needed locally — the workload image is built on each client node
+by Ansible, so there's no registry or local Docker dependency.
+
+Ansible runs natively on **macOS** and **Linux**. On **Windows** it has no native
+control node, so you run from **WSL (Ubuntu)** — install WSL once
+(`wsl --install` in an admin PowerShell, then reboot) and treat it as a Linux box.
+
+### Install (pick your OS)
+
+**macOS (Homebrew):**
+```bash
+brew install terraform ansible awscli jq
+```
+
+**Linux — Debian/Ubuntu:**
+```bash
+# Terraform from the HashiCorp apt repo:
+wget -qO- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt-get update && sudo apt-get install -y terraform ansible jq unzip
+# AWS CLI v2:
+curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+(cd /tmp && unzip -q awscliv2.zip && sudo ./aws/install)
+```
+*(Fedora/RHEL: use `dnf` + the HashiCorp `yum` repo. Arch: `pacman -S terraform ansible aws-cli jq`.)*
+
+**Windows (WSL/Ubuntu):** the bundled script does the Debian steps above **and**
+wires your Windows AWS credentials into WSL:
+```bash
+wsl --install            # admin PowerShell, then reboot
+bash bin/bootstrap-wsl.sh
+```
+
+**All platforms** — install the one Ansible collection the playbook needs, then verify:
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml
+terraform version && ansible --version && aws --version && jq --version
+```
 
 ---
 
@@ -67,8 +104,12 @@ Terraform runs fine on Windows for the whole infra path. Only the Ansible
      --key-name nfs-harness \
      --tag-specifications 'ResourceType=key-pair,Tags=[{Key=Project,Value=nfs-harness}]' \
      --query KeyMaterial --output text > ~/.ssh/nfs-harness.pem
-   # Windows: lock perms -> icacls "%USERPROFILE%\.ssh\nfs-harness.pem" /inheritance:r /grant:r "%USERNAME%:(R)"
+   chmod 600 ~/.ssh/nfs-harness.pem   # macOS / Linux / WSL
    ```
+   WSL note: keep the key in your **WSL home** (`~/.ssh/`), not on `/mnt/c/...` —
+   the Windows mount is world-writable (`0777`) and SSH/Ansible reject the key. If
+   you created it on Windows, copy it in:
+   `cp /mnt/c/Users/<you>/.ssh/nfs-harness.pem ~/.ssh/ && chmod 600 ~/.ssh/nfs-harness.pem`.
 3. **Set tfvars:**
    ```
    cp terraform/terraform.tfvars.example terraform/terraform.tfvars
@@ -86,31 +127,43 @@ Terraform runs fine on Windows for the whole infra path. Only the Ansible
 
 ## 5. Deploy / validate / tear down
 
-**Intended path (from the WSL control node — needs Ansible):**
+**Intended path (from the control node — macOS / Linux / WSL):**
 ```
-./bin/harness up --clients 3     # backend + fleet + mount NFS + start workload
+./bin/harness up --clients 3     # EFS (default), 3 clients, mount NFS + start workload
 ./bin/harness obs-up             # Prometheus/Grafana (reads scrape targets from the plane)
 ./bin/harness status             # Grafana URL + scrape targets
 ./bin/harness down               # destroy the test plane; instruments + network stay
 ./bin/harness obs-down           # park observability compute; metrics volume kept
 ```
 
-**Raw terraform path (what was actually used to validate the infra on Windows):**
+Per-run knobs are **flags** (no tfvars edits; `--flag value` or `--flag=value`):
+```
+./bin/harness up --nfs=self_managed --clients=20          # self-managed server + 20 clients
+./bin/harness up --nfs=efs --instance=t3.medium --clients=5
+./bin/harness up                                          # defaults: efs, t3.small, 3 clients
+```
+Unset flags fall back to terraform defaults (`efs` / `t3.small` / 3). After
+changing the fleet, re-run `obs-up` so Prometheus picks up the new targets.
+
+**Raw terraform path (infra only, any OS — skips the Ansible config step):**
 ```
 terraform -chdir=terraform apply -auto-approve
 terraform -chdir=terraform output
 terraform -chdir=terraform destroy -auto-approve
 ```
 
-**What has been validated end-to-end:**
-- Clean `terraform apply` → VPC, subnet, IGW, routes, 3 least-privilege SGs, EFS
-  + mount target, 3 running client nodes, Lambda+EventBridge guardrail.
-- **SSH** into a client with the key pair (proves Ansible connectivity; cloud-init
-  ran; `python3` present).
-- **Guardrail** invoked against the live fleet — correctly **kept** fresh
-  instances (`kept: [...]`, `terminated: []`) and would terminate any older than
-  `max_test_plane_age_hours` (default 3).
-- Clean `terraform destroy` → 0 resources left (verified no VPC/EFS/role remain).
+**What has been validated end-to-end (against live AWS):**
+- Full `apply` **and** `destroy` on the least-privilege `tight` profile alone —
+  EXIT 0 both, no broad fallback.
+- **Both backends:** EFS and a self-managed NFS server, switched with `--nfs`.
+- **Fleet scaled 3 → 10 → 20 clients** via `--clients`, all configured by Ansible
+  (`failed=0` across every host).
+- **Live Grafana dashboard** of real `fio` NFS load — fleet ops/s, throughput, and
+  (on self-managed) the single server saturating as the visible bottleneck.
+- **Observability survives test-plane teardown;** the persistent metrics EBS
+  re-attaches across obs-box rebuilds, retaining history from earlier runs.
+- **Guardrail** reaps stale `TestPlane` instances past its TTL (configurable via
+  `max_test_plane_age_hours`; bumped to 16h for an overnight run).
 
 ---
 
@@ -123,13 +176,13 @@ resource or carry no request tags. The deploy surfaced these, in order:
 | Finding | Resolution |
 |---|---|
 | `ec2:CreateKeyPair` denied | Use broad (one-time) — key pairs are setup, not per-cycle. |
-| `ec2:ModifyVpcAttribute` denied (DNS-on-VPC) — **blocked the whole network** | Added to tight (ResourceTag). ✅ confirmed fixed. |
+| `ec2:ModifyVpcAttribute` denied (DNS-on-VPC) — **blocked the whole network** | Added to tight (ResourceTag). confirmed fixed. |
 | `ec2:ModifySubnetAttribute` (auto-assign public IP) | Added to tight (ResourceTag). |
-| `iam:GetRolePolicy` denied on **both** users (provider reads inline policy back) | Added to tight. ✅ confirmed fixed (guardrail policy now IaC-managed). Add to broad too. |
+| `iam:GetRolePolicy` denied on **both** users (provider reads inline policy back) | Added to tight. confirmed fixed (guardrail policy now IaC-managed). Add to broad too. |
 | `elasticfilesystem:ListTagsForResource` (EFS tag read-back) | Added to tight. |
 | `iam:CreateServiceLinkedRole` for **spot** denied on both | Added (scoped to the Spot SLR) — or run on-demand. Workaround used: `client_capacity_type=on_demand`. |
-| `RequestTag` condition blocks `AttachInternetGateway` / `CreateSubnet` / `CreateSecurityGroup` (they authorize on the VPC) | ✅ Fixed — moved EC2 build actions to an unconditioned statement; destructive actions stay ResourceTag-locked. |
-| `ec2:CreateNetworkInterface` denied (EFS `CreateMountTarget` places an ENI as the caller) | ✅ Fixed — added ENI create/delete/modify to the build statement. |
+| `RequestTag` condition blocks `AttachInternetGateway` / `CreateSubnet` / `CreateSecurityGroup` (they authorize on the VPC) | Fixed — moved EC2 build actions to an unconditioned statement; destructive actions stay ResourceTag-locked. |
+| `ec2:CreateNetworkInterface` denied (EFS `CreateMountTarget` places an ENI as the caller) | Fixed — added ENI create/delete/modify to the build statement. |
 
 **Result:** with the corrected policy, the **entire lifecycle (`apply` + `destroy`)
 runs on `nfs-harness-tight` alone** — no broad fallback, no `-refresh=false`, no
@@ -167,18 +220,22 @@ out-of-band steps. Validated 2026-06-09.
 ## 8. Status — done vs remaining
 
 **Done:**
-- Full build of all layers; `terraform validate`/`fmt` clean; bash + Lambda
-  syntax-checked.
-- Live deploy validated end-to-end (apply → fleet + EFS + guardrail → SSH →
-  guardrail invoke → clean destroy).
-- IAM gaps characterized; corrected tight policy drafted.
+- All layers built; `terraform validate`/`fmt` clean; bash + Lambda syntax-checked.
+- Validated end-to-end on live AWS (see section 5): full apply+destroy on the
+  `tight` profile, both EFS and self-managed backends, fleet scaled to 20 clients,
+  live NFS metrics in Grafana, guardrail proven.
+- Per-run flags (`--nfs`, `--instance`, `--clients`, `--capacity`) so a run never
+  needs a code/tfvars edit.
+- IAM least-privilege policy characterized and validated end-to-end (see
+  [tight-iam-gaps.md](tight-iam-gaps.md)).
 
-**Remaining:**
-1. ~~Finalize the tight policy~~ — done; full apply+destroy validated on tight.
-2. `wsl --install` + `bin/bootstrap-wsl.sh` to enable the Ansible `configure` step.
-3. `obs-up` + `./bin/harness configure` → confirm **live NFS metrics in Grafana**
-   (node_exporter `mountstats` on the fleet → Prometheus → Grafana dashboard).
-4. Optional: create the EC2 Spot service-linked role, flip clients back to spot.
+**Remaining / roadmap** (tracked in the README TODO):
+1. Mixed-backend comparison runs — EFS and self-managed in a single run with
+   independent per-backend client counts.
+2. Self-managed server scale — `--servers N` and per-pool instance types.
+3. Per-run guardrail TTL flag (`--ttl`) instead of a tfvars edit.
+4. Optional: create the EC2-Spot service-linked role so the fleet can run on spot
+   (70–90% cheaper than on-demand).
 
 ---
 
@@ -193,3 +250,5 @@ out-of-band steps. Validated 2026-06-09.
 | `CreateSubnet`/`CreateSecurityGroup`/`AttachInternetGateway` denied "on resource vpc-..." | `RequestTag` condition can't match parent-resource actions. Move those creates to an unconditioned statement. |
 | Lambda guardrail: `UnauthorizedOperation` right after a policy change | IAM propagation lag — wait 1–2 min and re-invoke. |
 | `InvalidKeyPair.NotFound` at `RunInstances` | The key named by `ssh_key_name` doesn't exist in the region. Create it (step 4.2). |
+| (WSL) "ignoring world-writable ansible.cfg", then "no hosts matched" | The `/mnt/c` mount is `0777`, so Ansible drops `ansible.cfg` and loses the inventory. The `harness` wrapper sets `ANSIBLE_CONFIG` + `-i` explicitly to avoid this; if you invoke `ansible-playbook` by hand, do the same (or run from a path outside `/mnt/c`). |
+| (newer Ansible) "yaml callback plugin has been removed" | `ansible-core` ≥2.13 dropped the `yaml` stdout callback; the bundled `ansible.cfg` uses `result_format = yaml` instead. Update yours if you copied an old one. |

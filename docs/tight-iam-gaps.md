@@ -8,7 +8,7 @@ tighten tight.
 **Account:** 111122223333 · **Region:** us-east-1
 **Method:** EC2 `--dry-run` probes (auth-only) + real read calls + apply observations.
 
-## ✅ VALIDATED 2026-06-09
+## VALIDATED 2026-06-09
 
 With the corrected policy
 ([iam/nfs-harness-tight-policy.json](iam/nfs-harness-tight-policy.json)) applied to
@@ -66,7 +66,7 @@ and so aren't covered by the tag-conditioned create grants.
 
 ## GAPS (tight DENY)
 
-### 1. `ec2:ModifyVpcAttribute` — DENY  ⛔ BLOCKING
+### 1. `ec2:ModifyVpcAttribute` — DENY (BLOCKING)
 - **When:** apply 2026-06-08. `CreateVpc` succeeded (vpc-0f9736f698467b711) but
   the provider's follow-up `ModifyVpcAttribute` (enable DNS hostnames/support,
   from `enable_dns_hostnames=true` in network.tf) was denied — halting the whole
@@ -82,7 +82,7 @@ and so aren't covered by the tag-conditioned create grants.
   ResourceTag. If still denied, drop the condition — ModifyVpcAttribute has weak
   condition-key support.)
 
-### 2. `iam:GetRolePolicy` — DENY on BOTH tight AND broad ⚠️
+### 2. `iam:GetRolePolicy` — DENY on BOTH tight AND broad
 - **When:** tight apply (read-back after PutRolePolicy) AND the broad re-apply
   (refresh phase: "reading inline policies for IAM role nfs-harness-teardown").
   Terraform reads back every inline role policy, so this blocks ANY apply/destroy
@@ -109,7 +109,7 @@ and so aren't covered by the tag-conditioned create grants.
   permitted. The earlier untagged dry-run DENY was a false negative (default-VPC
   context). No action needed for RunInstances.
 
-### 5. `iam:CreateServiceLinkedRole` (spot) — DENY on BOTH ⛔
+### 5. `iam:CreateServiceLinkedRole` (spot) — DENY on BOTH
 - **When:** broad re-apply. Spot launch returned
   `AuthFailure.ServiceLinkedRoleCreationNotPermitted` — the account's
   `AWSServiceRoleForEC2Spot` role doesn't exist and neither profile can create it.
@@ -130,7 +130,7 @@ and so aren't covered by the tag-conditioned create grants.
   terraform just no longer manages that one resource. Grant `iam:GetRolePolicy`
   (gap #2) then `terraform import` it back to restore full IaC management.
 
-### 7. `RequestTag` condition blocks parent-resource / attach actions ⛔
+### 7. `RequestTag` condition blocks parent-resource / attach actions
 - **When:** validation apply on the UPDATED tight policy (2026-06-09). Confirmed
   fixed: `ec2:ModifyVpcAttribute` (VPC completed) and `iam:GetRolePolicy` (guardrail
   inline policy now created + read back under IaC). But new denials:
@@ -150,7 +150,7 @@ and so aren't covered by the tag-conditioned create grants.
   AWS-documented tag-on-create pattern.
 - **Status:** open — next policy revision.
 
-### 8. `ec2:CreateNetworkInterface` — DENY (EFS mount target) ⛔
+### 8. `ec2:CreateNetworkInterface` — DENY (EFS mount target)
 - **When:** apply on the #7-fixed policy (2026-06-09). Everything else succeeded on
   tight — VPC+ModifyVpcAttribute, AttachInternetGateway, CreateSubnet,
   CreateSecurityGroup, RunInstances (×3), guardrail (IaC-managed). Only
