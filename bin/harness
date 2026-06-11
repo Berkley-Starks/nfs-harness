@@ -34,8 +34,12 @@ die()  { echo "${c_red}xx ${c_rst} $*" >&2; exit 1; }
 
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
 
-tf()     { "$TF" -chdir="$TF_DIR" "$@"; }
-tf_obs() { "$TF" -chdir="$OBS_DIR" "$@"; }
+# cd into the module in a subshell rather than passing `-chdir=<path>`: a native
+# (Windows) terraform.exe under MSYS/Git Bash mangles the path argument, whereas
+# the shell's own `cd` handles every environment's path style. Equivalent to
+# -chdir (terraform's relative paths resolve against the module dir either way).
+tf()     { ( cd "$TF_DIR" && "$TF" "$@" ); }
+tf_obs() { ( cd "$OBS_DIR" && "$TF" "$@" ); }
 
 ###############################################################################
 # inventory: terraform output -> ansible/inventory/hosts.ini
