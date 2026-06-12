@@ -86,6 +86,24 @@ variable "dsx_mode" {
   }
 }
 
+variable "dsx_portal_cidr" {
+  description = "CIDR of the portal's veth link. VPC-routed to the server's ENI when dsx_mode is on, so off-box clients can reach the netns. Must not overlap the VPC CIDR."
+  type        = string
+  default     = "10.200.0.0/24"
+}
+
+variable "dsx_portal_ip" {
+  description = "The portal's veth IP — what clients mount for NFSv3. Must sit inside dsx_portal_cidr and match ansible/group_vars/all.yml (the harness wrapper threads the live value to Ansible)."
+  type        = string
+  default     = "10.200.0.2"
+}
+
+variable "dsx_mountd_port" {
+  description = "Pinned rpc.mountd port for the portal (dynamic by default upstream, which can't be firewalled). Must match ansible/group_vars/all.yml."
+  type        = number
+  default     = 20048
+}
+
 ###############################################################################
 # Capacity type — independently flippable for server vs clients.
 # Clients are textbook spot (cattle). Server is more pet: spot is fine for

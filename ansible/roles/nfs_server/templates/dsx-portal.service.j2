@@ -1,0 +1,33 @@
+# {{ ansible_managed }}
+#
+# DSX protocol portal: host kernel keeps serving NFSv4.2; this unit stands up
+# the netns-isolated, cgroup-capped NFSv3 portal on its own :2049.
+#
+# oneshot + RemainAfterExit: the script ESTABLISHES A STATE (netns, veth,
+# cgroup, in-ns services) rather than running a foreground daemon — the in-ns
+# rpcbind/rpc.mountd daemonize and hold the namespaces open. `start` blocks
+# until the portal genuinely serves I/O (readiness probe), so "active" means
+# usable, not just launched.
+
+[Unit]
+Description=DSX NFSv3 protocol portal (netns + cgroup, kernel primitives)
+# The portal exports a subdir of the main share — wait for the NFS stack.
+After=network-online.target nfs-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DSX_EXPORT_DIR={{ dsx_export_dir }}
+Environment=DSX_HOST_IP={{ dsx_host_ip }}
+Environment=DSX_NS_IP={{ dsx_portal_ip }}
+Environment=DSX_EXPORT_CIDR={{ dsx_export_cidr }}
+Environment=DSX_NFSD_THREADS={{ dsx_nfsd_threads }}
+Environment=DSX_MOUNTD_PORT={{ dsx_mountd_port }}
+Environment=DSX_CPU_MAX={{ dsx_cpu_max }}
+Environment=DSX_MEM_MAX={{ dsx_mem_max }}
+ExecStart=/opt/nfs-harness/dsx-portal.sh start
+ExecStop=/opt/nfs-harness/dsx-portal.sh stop
+
+[Install]
+WantedBy=multi-user.target

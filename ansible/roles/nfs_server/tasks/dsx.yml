@@ -1,0 +1,51 @@
+---
+# DSX protocol portal (dsx_mode=true only — gated by the import in main.yml).
+#
+# Ships files/dsx-portal.sh (the netns + mountns + cgroup mechanism, proven in
+# docs/dsx-derisk/) and wraps it in a oneshot systemd unit so the portal
+# survives reboots and has a proper stop path. The script is idempotent; the
+# unit's `start` blocks until the portal actually serves v3 I/O.
+
+- name: Ensure tooling for the portal is present (iproute for netns/veth)
+  ansible.builtin.dnf:
+    name:
+      - nfs-utils
+      - iproute
+    state: present
+
+- name: Install dsx-portal.sh
+  ansible.builtin.copy:
+    src: dsx-portal.sh
+    dest: /opt/nfs-harness/dsx-portal.sh
+    mode: "0755"
+  notify: restart dsx-portal
+
+- name: Install dsx-portal systemd unit
+  ansible.builtin.template:
+    src: dsx-portal.service.j2
+    dest: /etc/systemd/system/dsx-portal.service
+    mode: "0644"
+  notify: restart dsx-portal
+
+- name: Enable and start the portal
+  ansible.builtin.systemd:
+    name: dsx-portal
+    daemon_reload: true
+    enabled: true
+    state: started
+
+# Force any pending restart NOW (script/unit changed on a live portal), so the
+# verification below — and the client play after us — see the new portal, not
+# the stale one.
+- name: Flush handlers so the portal is current before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the portal namespace is serving
+  ansible.builtin.command: /opt/nfs-harness/dsx-portal.sh status
+  register: dsx_status
+  changed_when: false
+  failed_when: "'state: RUNNING' not in dsx_status.stdout"
+
+- name: Show portal status
+  ansible.builtin.debug:
+    msg: "{{ dsx_status.stdout_lines }}"

@@ -1,0 +1,10 @@
+---
+# A changed script or unit must re-establish the portal state: oneshot units
+# don't restart on file changes, and the running netns was built by the OLD
+# script. restarted on a oneshot runs ExecStop (full teardown) then ExecStart
+# (fresh build + readiness probe).
+- name: restart dsx-portal
+  ansible.builtin.systemd:
+    name: dsx-portal
+    daemon_reload: true
+    state: restarted

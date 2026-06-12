@@ -44,6 +44,30 @@
   register: run_result
   changed_when: run_result.rc == 0
 
+# DSX dual-protocol: an identical SECOND workload against the v3 portal mount.
+# Same image and env — the only delta is the protocol underneath — so the
+# Grafana 4.2-vs-v3 comparison has a single variable.
+- name: "DSX: remove any prior portal workload container"
+  ansible.builtin.command:
+    cmd: "docker rm -f {{ workload_container }}-dsx"
+  register: rm_dsx_result
+  changed_when: rm_dsx_result.rc == 0
+  failed_when: false
+  when: dsx_mode | default(false) | bool
+
+- name: "DSX: run the portal workload container against the v3 mount"
+  ansible.builtin.command:
+    cmd: >-
+      docker run -d
+      --name {{ workload_container }}-dsx
+      --restart unless-stopped
+      -v {{ dsx_mount_point }}:/data
+      {% for k, v in workload_env.items() %}-e {{ k }}={{ v }} {% endfor %}
+      {{ workload_image }}
+  register: run_dsx_result
+  changed_when: run_dsx_result.rc == 0
+  when: dsx_mode | default(false) | bool
+
 - name: Show running workload container
   ansible.builtin.command:
     cmd: "docker ps --filter name={{ workload_container }} --format '{{ '{{' }}.Names{{ '}}' }} {{ '{{' }}.Status{{ '}}' }}'"

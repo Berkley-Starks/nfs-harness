@@ -1,4 +1,11 @@
 ---
+# DSX protocol portal — only when the run was applied with dsx_mode=true
+# (bin/harness injects the var from terraform output). Import, not include:
+# static, so --syntax-check and --list-tasks always see it.
+- name: DSX protocol portal
+  ansible.builtin.import_tasks: dsx.yml
+  when: dsx_mode | default(false) | bool
+
 # Apply (or clear) a reproducible tbf egress cap on the server's primary
 # interface. See defaults/main.yml for the rationale.
 

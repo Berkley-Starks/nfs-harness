@@ -11,3 +11,14 @@
 # write/ingress path instead, shape the clients' egress or add an ifb device
 # here; left as a documented extension to keep the default path simple.
 server_egress_cap_mbit: 0
+
+###############################################################################
+# DSX protocol portal — server-side knobs (values shared with the client play —
+# dsx_export_dir / dsx_portal_ip / dsx_mountd_port — live in group_vars/all.yml).
+# All inert unless dsx_mode=true. See files/dsx-portal.sh for the mechanism.
+###############################################################################
+dsx_host_ip: 10.200.0.1          # host end of the veth pair
+dsx_nfsd_threads: 4              # portal nfsd thread count
+dsx_cpu_max: "50000 100000"      # cgroup v2 cpu.max -> 0.5 CPU
+dsx_mem_max: 268435456           # cgroup v2 memory.max -> 256 MiB
+dsx_export_cidr: 10.0.0.0/8      # who may mount the v3 export

@@ -14,6 +14,11 @@ output "dsx_mode" {
   value       = var.dsx_mode
 }
 
+output "dsx_portal_ip" {
+  description = "The NFSv3 portal's veth IP (clients mount it with vers=3,nolock,mountport=...). null when dsx_mode is off."
+  value       = local.dsx_enabled ? var.dsx_portal_ip : null
+}
+
 output "nfs_endpoint" {
   description = "Mount endpoint for clients (DNS name for EFS, private IP for self-managed)."
   value = local.use_efs ? (

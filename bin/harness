@@ -116,12 +116,13 @@ configure() {
   need ansible-playbook
 
   local json; json="$(tf output -json)"
-  local endpoint export_path backend private dsx
+  local endpoint export_path backend private dsx dsx_ip
   endpoint="$(echo "$json"   | jq -r '.nfs_endpoint.value // empty')"
   export_path="$(echo "$json"| jq -r '.nfs_export_path.value // "/"')"
   backend="$(echo "$json"    | jq -r '.nfs_backend_selected.value')"
   private="$(echo "$json"    | jq -r '.private_networking.value // false')"
   dsx="$(echo "$json"        | jq -r '.dsx_mode.value // false')"
+  dsx_ip="$(echo "$json"     | jq -r '.dsx_portal_ip.value // empty')"
   [ -n "$endpoint" ] || die "nfs_endpoint is empty — is the test plane up?"
 
   gen_inventory
@@ -152,6 +153,7 @@ configure() {
       -e "nfs_export_path=$export_path" \
       -e "nfs_backend=$backend" \
       -e "dsx_mode=$dsx" \
+      ${dsx_ip:+-e "dsx_portal_ip=$dsx_ip"} \
       -T 30 )
   say "fleet configured; workload running"
 }
@@ -175,13 +177,18 @@ cmd_up() {
     # server). Needs a non-burstable client type (the c5n.large default qualifies);
     # removes placement as a variable when comparing per-client behavior.
     if [ "$1" = "--cluster-clients" ]; then extra+=("-var" "cluster_clients=true"); shift; continue; fi
+    # DSX dual-protocol mode: host kernel NFSv4.2 + a netns-isolated, cgroup-
+    # capped NFSv3 portal on the self-managed server (see docs/dsx-mode-plan.md).
+    # Requires --nfs self_managed — checked below so the failure is a one-line
+    # message here, not a terraform validation trace.
+    if [ "$1" = "--dsx-mode" ]; then DSX_MODE=1; extra+=("-var" "dsx_mode=true"); shift; continue; fi
     # Hardened posture: private fleet subnet, NAT egress, SSM access (no public
     # IPs, no SSH). Needs the private-mode IAM + session-manager-plugin locally.
     if [ "$1" = "--private" ]; then extra+=("-var" "private_networking=true"); shift; continue; fi
     if [[ "$1" == *=* ]]; then key="${1%%=*}"; val="${1#*=}"; shift
     else key="$1"; val="${2:-}"; shift 2; fi
     case "$key" in
-      --nfs|--backend)   extra+=("-var" "nfs_backend=$val") ;;          # efs | self_managed
+      --nfs|--backend)   extra+=("-var" "nfs_backend=$val"); BACKEND="$val" ;; # efs | self_managed
       --instance)        extra+=("-var" "client_instance_type=$val") ;; # client fleet size, e.g. t3.small
       --server-instance) extra+=("-var" "server_instance_type=$val") ;; # self-managed server size
       --clients)         extra+=("-var" "client_count=$val") ;;
@@ -195,6 +202,12 @@ cmd_up() {
       *) die "unknown flag to up: $key" ;;
     esac
   done
+
+  # DSX needs the self-managed server (EFS can't host the portal). Fail here,
+  # friendly and early — terraform's variable validation is the hard backstop.
+  if [ "${DSX_MODE:-0}" = "1" ] && [ "${BACKEND:-}" != "self_managed" ]; then
+    die "--dsx-mode requires --nfs self_managed (the portal runs ON the server; EFS is managed and can't host it)"
+  fi
 
   need "$TF"
   # Pre-flight the config toolchain BEFORE creating any AWS resources. Running
@@ -277,6 +290,7 @@ harness — ephemeral NFS test harness control
                    --server-instance TYPE     self-managed server size
                    --no-pg                    skip the cluster placement group
                    --cluster-clients          also place the client fleet in the cluster PG (non-burstable type)
+                   --dsx-mode                 DSX dual-protocol: host NFSv4.2 + netns NFSv3 portal (needs --nfs self_managed)
                    --private                  hardened posture (private subnet + NAT + SSM, no public IPs)
                    --no-config                skip the ansible step
                  e.g.  ./harness up --nfs=self_managed --clients=10 --capacity=spot

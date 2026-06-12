@@ -1,0 +1,28 @@
+---
+###############################################################################
+# DSX dual-protocol mode — values BOTH the server play (exports) and the client
+# play (mounts) must agree on, so they live here once instead of in two roles'
+# defaults. All inert unless dsx_mode=true (bin/harness injects it from
+# `terraform output` when the test plane was applied with -var dsx_mode=true).
+###############################################################################
+
+dsx_mode: false
+
+# The portal's export directory. Deliberately UNDER the main export's mount
+# (/srv/nfs/share = instance-store NVMe / provisioned EBS), so the v3 portal and
+# the host's v4.2 export share the same backing disk — a protocol comparison,
+# not a disk comparison.
+dsx_export_dir: /srv/nfs/share/dsx-v3
+
+# The portal's veth IP — what clients mount. Terraform routes this CIDR to the
+# server's ENI (dsx_mode gates the route + src/dst-check + SG ports); bin/harness
+# passes the live value from `terraform output dsx_portal_ip`, this is the
+# fallback default and must match terraform/variables.tf:dsx_portal_ip.
+dsx_portal_ip: 10.200.0.2
+
+# rpc.mountd port, PINNED (dynamic by default, which can't be firewalled).
+# Clients pass mountport= so they also skip the rpcbind round-trip.
+dsx_mountd_port: 20048
+
+# Where clients mount the portal (the v4.2 share stays at nfs_mount_point).
+dsx_mount_point: /mnt/nfs-dsx

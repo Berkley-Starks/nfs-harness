@@ -41,6 +41,7 @@ NS_IP="${DSX_NS_IP:-10.200.0.2}"
 EXPORT_DIR="${DSX_EXPORT_DIR:-/srv/nfs/dsx-v3}"
 EXPORT_CIDR="${DSX_EXPORT_CIDR:-10.0.0.0/8}"
 NFSD_THREADS="${DSX_NFSD_THREADS:-4}"
+MOUNTD_PORT="${DSX_MOUNTD_PORT:-20048}"
 CPU_MAX="${DSX_CPU_MAX:-50000 100000}"
 MEM_MAX="${DSX_MEM_MAX:-268435456}"
 
@@ -113,11 +114,11 @@ EOF
   say "writing portal-inner helper (runs in netns + PRIVATE mount ns)"
   cat > "$STATE/portal-inner.sh" <<'INNER'
 #!/bin/bash
-# Runs via: ip netns exec <ns> unshare -m <this script> <state-dir> <threads>
+# Runs via: ip netns exec <ns> unshare -m <this script> <state> <threads> <mountd-port>
 # Everything mounted here is invisible to the host — this is the "container's"
 # private filesystem view, namespaced state only (no rootfs pivot needed).
 set -euo pipefail
-STATE="$1"; THREADS="$2"
+STATE="$1"; THREADS="$2"; MPORT="$3"
 mount --make-rprivate /
 mount -t tmpfs tmpfs /run                          # private rpcbind state
 mkdir -p /run/rpcbind
@@ -130,7 +131,9 @@ mount -t nfsd nfsd /proc/fs/nfsd
 rpcbind                                            # portmapper (:111) — v3 needs it
 exportfs -ra
 rpc.nfsd --nfs-version 3 --no-nfs-version 4 "$THREADS"   # v3-ONLY server
-rpc.mountd --no-nfs-version 4                      # MNT protocol (daemonizes)
+# MNT protocol (daemonizes). Port PINNED so (a) the SG rule for off-box clients
+# is deterministic, (b) clients can pass mountport= and skip the rpcbind query.
+rpc.mountd --no-nfs-version 4 -p "$MPORT"
 # rpcbind + rpc.mountd daemonize INSIDE this mount ns and keep it alive;
 # no holder process is needed.
 echo "portal services up: $(ss -tln 'sport = :2049' | grep -c 2049) x :2049 listener(s)"
@@ -138,7 +141,7 @@ INNER
   chmod +x "$STATE/portal-inner.sh"
 
   say "starting portal services (v3-only nfsd, $NFSD_THREADS threads)"
-  if ! ip netns exec "$NS" unshare -m "$STATE/portal-inner.sh" "$STATE" "$NFSD_THREADS"; then
+  if ! ip netns exec "$NS" unshare -m "$STATE/portal-inner.sh" "$STATE" "$NFSD_THREADS" "$MOUNTD_PORT"; then
     err "portal services failed to start — tearing back down"
     do_stop quiet
     exit 1
@@ -240,7 +243,7 @@ do_status() {
     echo "state: DOWN (no netns)"; return 1
   fi
   if portal_running; then echo "state: RUNNING"; else echo "state: DEGRADED (netns up, no :2049 listener)"; fi
-  echo "portal IP: $NS_IP (mount with: -o vers=3 $NS_IP:$EXPORT_DIR)"
+  echo "portal IP: $NS_IP (mount with: -o vers=3,nolock,mountport=$MOUNTD_PORT $NS_IP:$EXPORT_DIR)"
   echo "listeners in ns:"
   ip netns exec "$NS" ss -tlnp 2>/dev/null | grep -E ':(111|2049|20048)\s' | sed 's/^/  /' || echo "  (none)"
   if [ -d "$CG" ]; then

@@ -161,6 +161,11 @@ resource "aws_instance" "nfs_server" {
 
   subnet_id = local.fleet_subnet_id
 
+  # DSX: the server forwards traffic to/from the portal netns (packets addressed
+  # to the portal IP, not the instance's own) — EC2 drops those unless the
+  # src/dst check is off. Router behavior is opt-in with the portal itself.
+  source_dest_check = var.dsx_mode ? false : true
+
   # SSM instance profile in private mode; null in public mode.
   iam_instance_profile = local.fleet_instance_profile
 
