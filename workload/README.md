@@ -18,6 +18,15 @@ mounted NFS share. The Ansible `workload` role builds it **on each client**
 
 Each client writes under `/data/load/<hostname>/` so the fleet doesn't collide.
 
+**Testing note.** The generator currently runs **buffered** (`fio --direct=0`), so
+writes land in the page cache and the kernel flushes them in **line-rate bursts**.
+With each client free-running its own `LOOP` cycle, the fleet drifts out of phase —
+which surfaces as *asymmetric* ENA tx-allowance clipping across identical clients
+(the ones mid file-laydown clip hardest) even though the 1-second average is well
+below the NIC baseline. This is a measurement artifact, not a per-instance defect;
+the planned fix is NIC-side `fq` pacing + a phase-sync barrier. Details in
+[`docs/findings-write-path-saturation.md`](../docs/findings-write-path-saturation.md).
+
 ## Run by hand (on a client)
 
 ```bash

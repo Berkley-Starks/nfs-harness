@@ -21,9 +21,11 @@ This isn't a paper design — every layer has been run against real AWS:
 
 | What | Result |
 |---|---|
-| `terraform apply` → fleet + EFS + guardrail | clean, EXIT 0 |
+| `terraform apply` → fleet + backend + guardrail | clean, EXIT 0 |
 | Ansible configures the fleet | node_exporter + NFS mount + workload, `failed=0` across all nodes |
-| **Live load (3× `t3.small`, EFS backend)** | **~2,700 NFS ops/s · ~97 MB/s write · ~900 ops/s per node · 80–86% CPU** |
+| **Smoke load (3× `t3.small`, EFS backend)** | **~2,700 NFS ops/s · ~97 MB/s write · ~900 ops/s per node · 80–86% CPU** |
+| **Benchmark load (5× `c5n.large` + `m5dn.large` self-managed, all spot)** | export on **local-NVMe instance store**, cluster PG, 6/6 node_exporters `UP`, zero RPC retransmits |
+| **Iterative bottleneck isolation** | each run surfaced and removed the next hidden ceiling — server NIC allowance → root-disk gp3 baseline → volume gp3 baseline → **instance EBS pipe** (~0.65 Gbit/s on c5n.large) → now on instance-store NVMe. See [findings](docs/findings-write-path-saturation.md). |
 | Observability scrapes the fleet | all node_exporters `UP`, NFS mountstats flowing to Grafana |
 | Metrics volume survives instance replacement | EBS re-attached automatically on obs-box replace |
 | Full teardown | `terraform destroy` EXIT 0, verified $0 left running |
@@ -108,6 +110,33 @@ both planes sit in.
 
 ---
 
+## Current defaults
+
+Where the knobs land today (all overridable per-run; see flags below). The
+defaults are tuned for a **correct benchmark**, not the cheapest possible run —
+drop to `t3.small`/EFS for smoke tests.
+
+| Knob | Default | Why |
+|---|---|---|
+| `nfs_backend` | `efs` | fastest path to a working harness; `--nfs self_managed` for a server you can break/instrument |
+| `client_instance_type` | `c5n.large` | network-optimized, non-burstable — burstable NICs clip under load and make results wall-clock-dependent |
+| `server_instance_type` | `m5dn.large` | enhanced networking **and** local NVMe (`d`), so the export can bypass EBS |
+| `server_use_instance_store` | `true` | export rides local NVMe → EBS leaves the data path (removes the ~0.65 Gbit/s instance-EBS cap) |
+| `*_capacity_type` | `spot` (both tiers) | 70–90% cheaper; flip the server to `on_demand` for an uninterrupted benchmark |
+| `enable_placement_group` | `true` | single-AZ cluster PG packs server+clients onto low-latency hardware |
+| `cluster_clients` | `false` | clients join the PG only with `--cluster-clients` (kept off so spot capacity is easier to satisfy) |
+| `private_networking` | `false` | cheap public layout (admin-gated SSH); `--private` flips to private subnet + NAT + SSM |
+| `prometheus_enable_basic_auth` | `false` | opt-in hardening; off by default so the metrics path is the proven one (see hardening note) |
+
+**Known open item (under investigation):** on identical clients, ENA tx-allowance
+clipping is *asymmetric* and sub-baseline — almost certainly buffered-writeback
+microbursts from phase-desynced `fio` loops, not a per-instance defect. The load is
+left unchanged while a diagnostic run confirms the mechanism; the planned fix is
+client-side `fq` pacing + a phase-sync barrier. Tracked in the
+[findings doc](docs/findings-write-path-saturation.md) (Run 4/5).
+
+---
+
 ## Quick start
 
 **Control node:** Linux or WSL (Ubuntu). Ansible has no native Windows control
@@ -139,7 +168,8 @@ cp terraform/observability/terraform.tfvars.example terraform/observability/terr
 `harness up` flags: `--clients N`, `--backend efs|self_managed`,
 `--capacity spot|on_demand` (both tiers; override one with `--client-capacity` /
 `--server-capacity`), `--instance` / `--server-instance TYPE`, `--private`
-(hardened private/SSM posture), `--no-pg` (skip placement group), `--no-config`
+(hardened private/SSM posture), `--no-pg` (skip placement group),
+`--cluster-clients` (co-locate clients in the PG too), `--no-config`
 (skip Ansible). Raw `terraform` plan/apply/validate still works inside
 `terraform/` and `terraform/observability/`.
 
@@ -174,6 +204,7 @@ nfs-harness/
 ├── README.md                       # you are here
 ├── docs/
 │   ├── SETUP_GUIDE.md              # from-scratch setup/ops guide + troubleshooting
+│   ├── findings-write-path-saturation.md  # the iterative bottleneck-isolation log (Runs 1–5)
 │   ├── tight-iam-gaps.md           # the least-privilege IAM journey (gap ledger)
 │   ├── iam/nfs-harness-tight-policy.json   # validated tight policy
 │   └── diagrams/                   # architecture diagram
@@ -188,7 +219,7 @@ nfs-harness/
 │       └── templates/cloud-init.sh.tftpl
 ├── ansible/                        # config layer
 │   ├── site.yml ansible.cfg requirements.yml
-│   └── roles/{node_exporter,nfs_client,workload}/
+│   └── roles/{node_exporter,nfs_client,nfs_server,workload}/  # nfs_server = optional tc egress cap
 ├── workload/                       # containerized fio NFS load generator
 │   ├── Dockerfile run-load.sh
 ├── lambda/teardown.py              # guardrail handler
@@ -248,9 +279,14 @@ for throwaway runs, cheap (no NAT).
   CIDR, instead of the original `*(...,no_root_squash)` (no remote-root→local-root
   on the share, no world export).
 - **All EBS volumes encrypted** (fleet roots, server export, obs box, metrics).
-- **Prometheus HTTP basic auth** — the box bcrypt-hashes the password at boot and
-  wires Grafana's datasource with the creds (Prometheus had *no* auth before).
 - **IMDSv2 required**, SSH key-only.
+
+**Opt-in hardening:**
+- **Prometheus HTTP basic auth** (`prometheus_enable_basic_auth`, default **off**) —
+  the box bcrypt-hashes the password at boot and wires Grafana's datasource with the
+  creds. Default off because a datasource↔web-config mismatch breaks *every* panel
+  ("No data"); the metrics path matters more than auth on an `admin_cidr`-gated box,
+  so it's left as a validated-before-enabled extra rather than a silent default.
 
 The private posture's IAM surface (NAT/EIP, the SSM transfer bucket, SSM sessions,
 the instance profile) is in the policy file and documented as gap #11 in
@@ -313,6 +349,12 @@ This is a working PoC; these are the next features on the roadmap (not yet built
 - [ ] **Per-run guardrail TTL flag.** Surface `max_test_plane_age_hours` as a
   `harness up --ttl` flag instead of a tfvars edit (currently bumped manually for
   long/overnight runs).
+- [ ] **Client-side egress pacing + phase sync.** Testing surfaced asymmetric ENA
+  microburst clipping across identical clients (buffered-writeback bursts from
+  phase-desynced `fio` loops). Planned: an `fq` pacing qdisc on clients (generalize
+  the server's `tc`/`server_egress_cap_mbit` into a `client_pacing` option) plus a
+  start barrier / longer measurement window so per-client comparisons average over a
+  full loop cycle. See the findings doc (Run 4 diagnostic → Run 5 fix).
 
 ## Possible extensions
 

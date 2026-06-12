@@ -137,12 +137,15 @@ terraform version && ansible --version && aws --version && jq --version
 
 Per-run knobs are **flags** (no tfvars edits; `--flag value` or `--flag=value`):
 ```
-./bin/harness up --nfs=self_managed --clients=20          # self-managed server + 20 clients
-./bin/harness up --nfs=efs --instance=t3.medium --clients=5
-./bin/harness up                                          # defaults: efs, t3.small, 3 clients
+./bin/harness up --nfs=self_managed --clients=20 --cluster-clients  # self-managed + 20 co-located clients
+./bin/harness up --nfs=efs --instance=t3.small --clients=5          # cheap smoke test (burstable clients)
+./bin/harness up                                          # defaults: efs, c5n.large clients, spot, 3 clients
 ```
-Unset flags fall back to terraform defaults (`efs` / `t3.small` / 3). After
-changing the fleet, re-run `obs-up` so Prometheus picks up the new targets.
+Unset flags fall back to terraform defaults (`efs` backend / `c5n.large` clients /
+`m5dn.large` self-managed server / `spot` / 3 clients). The client/server defaults
+are network-optimized for benchmark correctness — pass `--instance t3.small` for a
+cheap smoke test. After changing the fleet, re-run `obs-up` so Prometheus picks up
+the new targets.
 
 **Raw terraform path (infra only, any OS — skips the Ansible config step):**
 ```
@@ -211,8 +214,9 @@ out-of-band steps. Validated 2026-06-09.
   `TestPlane=true` instance older than N hours, scoped by IAM to this project's
   tag only. Catches a forgotten `down`.
 - **Idle cost** ≈ one small EBS volume (only if observability metrics exist).
-  On-demand `t3.small` ×3 ≈ $0.06/hr; flip to spot for 70–90% off once the Spot
-  SLR exists.
+  The benchmark default (5× `c5n.large` + `m5dn.large`, all spot) ≈ a few $/hr
+  on-demand and 70–90% less on spot; a cheap smoke test (`--instance t3.small` ×3,
+  EFS) ≈ $0.06–0.12/hr. Spot needs the EC2-Spot SLR (created once).
 
 ---
 
