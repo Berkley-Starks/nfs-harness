@@ -65,6 +65,28 @@ is still unverified → measure at step 6 (drive fio through the portal, watch
 `cgroup`'s `cpu.stat` throttling counters). Until then the honest claim is
 "threads join the cgroup; enforcement under load TBD."
 
+## Bonus finding from productionizing (`dsx-portal.sh` lifecycle testing)
+
+**The NFSv3 `root_squash` + `O_CREAT` papercut — a real v3-vs-v4.2 behavioral
+difference the portal surfaced on day one.** With `root_squash` on the portal's
+v3 export, a ROOT writer's `open(O_CREAT|O_WRONLY)` fails `EACCES`: the CREATE
+succeeds server-side (file appears, owned `nobody`, 0644), but the open's access
+check then pits **local uid 0** against the nobody-owned file — root gets no
+`CAP_DAC_OVERRIDE` over NFS — and is denied as the "other" class. strace:
+
+```
+openat(O_WRONLY|O_CREAT|O_TRUNC) = -1 EACCES   <- create-and-open: denied
+openat(O_WRONLY|O_TRUNC)         = 3           <- same file, no O_CREAT: works
+```
+
+Meanwhile the harness's main **NFSv4.2** export runs `root_squash` with a root
+fio workload happily — v4's atomic server-side OPEN resolves create+access as the
+*squashed* identity, so the papercut doesn't exist there. Non-root writers are
+unaffected on both. Consequence: the portal's v3 export defaults to
+`no_root_squash` (override via `DSX_EXPORT_OPTS`), documented as modeling what
+legacy-v3 fabrics actually run — and the portal's readiness probe writes *data*,
+not just `touch`, so this failure class can't hide behind a create-only check.
+
 ## Files
 
 - `dsx-derisk-v1.sh` — first probe (netns-only). Kept for the autopsy value.
