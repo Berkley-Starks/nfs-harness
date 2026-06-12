@@ -155,6 +155,12 @@ the harness created, measured by a dashboard that cannot see latency.
       125 MB/s baseline. New `server_data_volume_*` vars: a separate gp3 (or io2)
       device at 500 MB/s / 4000 IOPS, mounted at `/srv/nfs/share`; root shrinks to
       OS-only.
+- [ ] **Size the instance for EBS *bandwidth*, or bypass EBS entirely.** Run 3
+      showed the dedicated volume's own limits are no longer binding — the
+      *instance's* EBS pipe is (c5n.large baseline ≈ 0.65 Gbit/s). Either move up
+      to c5n.xlarge+ (≈1.15 Gbit/s baseline) or use an instance-store NVMe type
+      (c5d/m5dn/i3en) to take EBS out of the path. Or document 0.65 Gbit/s as the
+      intended storage constraint and benchmark against it deliberately.
 - [ ] `nconnect=4–16` to parallelize per-client transport and stop writes
       head-of-line-blocking reads on the shared TCP connection.
 - [ ] `wsize=1M` (currently shipping ~89 KB per WRITE).
@@ -207,6 +213,39 @@ but it's credit-dependent — the wall-clock problem again, client-side — and 
 the limit the moment the disk is fixed. → **Guidance added** to use c5n/m5n load
 generators for benchmark runs (which also unlocks `cluster_clients`); the ethtool
 panel is what surfaced this.
+
+## Run 3 (2026-06-11, ~21:23) — volume fix validated; cap moved to instance EBS
+
+Fresh fleet (server `.126`, clients `.6/.29/.30/.69/.125`), same c5n.large server.
+
+**Volume fix confirmed.** Export is now on the dedicated 100 GB xfs volume
+(`nvme1n1` → `/srv/nfs/share`); the root disk is idle. The new panels (CPU
+excl-iowait, iowait, per-device disk) are live and reading correctly. Server NIC
+still clean: 291 Mbit/s tx, zero ENA events, zero RPC retransmissions.
+
+**Bottleneck #1 moved up a layer — instance EBS bandwidth, not the volume.**
+`nvme1n1` flat-tops at **77.4 MiB/s combined = 0.65 Gbit/s exactly** — the
+documented **c5n.large per-instance EBS baseline**. Pinned there from minute one:
+100% util, ~1,090 IOPS @ ~72 KiB, queue ~6.5. The *volume's* own limits aren't
+binding (well under 125 MB/s / 3000 IOPS) — the *instance's* EBS pipe is. Net
+effect is worse than Run 2: iowait 95%, client RTT 0.66–1.25 s (was ~0.5),
+per-client ops 380 → ~215, per-client NFS throughput ~14.5 MB/s. No EBS burst
+appeared (c5n.large can burst 4.75 Gbit/s ~30 min/24 h) — likely spent during
+dataset laydown before measurement; CloudWatch `EBSByteBalance%` would confirm.
+The irony: c5n was picked for its big NIC, but `.large` has one of the *smallest*
+EBS baselines in the family. → **Fix queued in §D** (go c5n.xlarge+, or an
+instance-store NVMe type to bypass EBS, or document 0.65 Gbit/s as the constraint).
+
+**Bottleneck #2 unchanged — clients still burstable.** `bw_out_allowance_exceeded`
+continues: `.69` ≈ 109/s, `.29` ≈ 41/s, others 4–9/s — at only ~60 Mbit/s avg tx
+each (sub-second bursts getting clipped, asymmetrically per node). The planned
+client fix (c5n/m5n, or an explicit tc cap) didn't make this iteration. Not the
+binding constraint today, but it adds node-dependent tail latency, is
+credit/wall-clock dependent, and becomes the limit the moment #1 is fixed.
+
+Each fix is working and peeling back the next layer: network ✓, root volume ✓,
+now **instance EBS bandwidth**, with the burstable clients queued as the layer
+after that.
 
 ## Re-validation sequence (after fixes)
 
