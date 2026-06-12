@@ -190,6 +190,18 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
         { "expr": "1000 * rate(node_mountstats_nfs_operations_response_time_seconds_total{operation=~\"READ|WRITE\"}[1m]) / rate(node_mountstats_nfs_operations_requests_total{operation=~\"READ|WRITE\"}[1m])", "legendFormat": "{{instance}} {{operation}} rtt" },
         { "expr": "1000 * rate(node_mountstats_nfs_operations_request_time_seconds_total{operation=~\"READ|WRITE\"}[1m]) / rate(node_mountstats_nfs_operations_requests_total{operation=~\"READ|WRITE\"}[1m])", "legendFormat": "{{instance}} {{operation}} total" }
       ]
+    },
+    {
+      "type": "timeseries", "title": "DIAG · per-client NFS WRITE MB/s (fio laydown phase = write spike)",
+      "description": "The phase indicator. fio loops create-files (write-heavy laydown) -> steady randrw, and the five clients drift out of phase. A client riding high here is mid-laydown. Read together with the clip panel on the right: if a client's WRITE spike lines up with its allowance clips, the ENA clipping is buffered-writeback (direct=0) microburst during laydown — not sustained-rate exhaustion (the 1s average stays low). If the heavy set ROTATES across clients over ~10 min, the asymmetry is phase desync between independent loops, not a per-instance defect.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "targets": [ { "expr": "sum by (instance) (rate(node_mountstats_nfs_write_bytes_total[1m])) / 1048576", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "DIAG · per-client tx-allowance clips/s (microburst → ENA token bucket)",
+      "description": "node_ethtool_bw_out_allowance_exceeded rate, per client. node_exporter scrapes at 10s so this is a microburst PROXY: the counter accumulates every sub-second clip between scrapes. Correlate spikes here with the WRITE panel on the left (same time axis) and watch whether the heavy set is FIXED to instances (structural) or MIGRATES (phase desync).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "targets": [ { "expr": "rate(node_ethtool_bw_out_allowance_exceeded[1m])", "legendFormat": "{{instance}}" } ]
     }
   ]
 }

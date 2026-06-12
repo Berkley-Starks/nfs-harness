@@ -250,6 +250,48 @@ Each fix is working and peeling back the next layer: network ✓, root volume �
 now **instance EBS bandwidth**, with the burstable clients queued as the layer
 after that.
 
+## Run 4 (planned) — diagnose the asymmetric client clipping BEFORE fixing it
+
+**Observation (Run 3 fleet).** `bw_out_allowance_exceeded` is asymmetric across five
+*identical* c5n.large clients: ~2 heavy (450–490 ev/s), ~1 medium (rising), ~2
+near-zero — while every client averages only ~80–115 Mbit/s tx. Sub-baseline
+average + heavy clipping ⇒ **microburst** clipping, not sustained-rate exhaustion.
+The same 2/1/2 shape appeared on the t3 iteration too.
+
+**What the code rules out.** The load is byte-identical per client
+([`workload/run-load.sh`](../workload/run-load.sh), [`roles/workload`](../ansible/roles/workload)):
+same `randrw 64k 512M numjobs=4`, per-host subdir, no index/hostname branching. So
+the asymmetry is **not** a per-client fio-mix difference. Two structural facts make
+bursts likely: `--direct=0` (buffered → kernel *writeback* flushes at line rate) and
+five **free-running** `LOOP=true` fio cycles that drift out of phase.
+
+**Hypothesis.** The "heavy" clients are whichever are mid **file-laydown** (write-heavy)
+at scrape time; buffered writeback flushes as line-rate microbursts that drain the ENA
+token bucket. The 2/1/2 shape is a *snapshot of five desynced oscillators*, not a
+per-instance defect — so the heavy set should **migrate** over time.
+
+**Decision criterion (the one observation that settles it):**
+- Heavy set **migrates** across clients over ~10 min, and each client's clip spike
+  tracks its own WRITE spike → **phase-desync artifact** (software-fixable). Expected.
+- Heavy set **fixed** to the same instance IDs → **structural** (host/placement); chase
+  the network path instead.
+
+**Protocol.**
+1. Spin up `--nfs self_managed --capacity spot`, **`--cluster-clients`** (the Run 3
+   clients were NOT in the PG — `cluster_clients` defaulted false; co-locate them to
+   remove placement as a variable). Capture `client_placement_groups` output as proof.
+2. Let it run **≥15 min** (several 120 s fio cycles so phase drift is observable).
+3. Watch the two **DIAG** dashboard panels together: *per-client WRITE MB/s* (laydown)
+   vs *per-client tx-allowance clips/s*. Confirm (a) spikes co-occur per client, (b) the
+   heavy set rotates. Note load is unchanged on purpose — this run only *explains*.
+
+**Fix (deferred to Run 5, intent = realistic app behavior — keep `direct=0`):** pace at
+the NIC with an `fq` qdisc on clients (generalize the server's `tc`/`server_egress_cap_mbit`
+into a client-side `fq`/`client_pacing` option) and add a **phase-sync barrier** (or a
+measurement window ≥ one full loop cycle) so per-client tail-latency comparisons average
+over phases instead of catching everyone at a random point. Optional exactness upgrade: a
+node_exporter **textfile** phase-marker emitted by `run-load.sh` at each pass boundary.
+
 ## Re-validation sequence (after fixes)
 
 1. [ ] Baseline **1 client** against the fixed server — expect ms-level WRITE RTT.

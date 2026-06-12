@@ -110,6 +110,11 @@ output "client_instance_ids" {
   value       = aws_instance.client[*].id
 }
 
+output "client_placement_groups" {
+  description = "Per-client placement group (empty string = NOT co-located). Provenance for the asymmetric-clipping diagnostic: with cluster_clients=false the clients are NOT in the cluster PG even when the server is, so this distinguishes a placement variable from a workload one."
+  value       = aws_instance.client[*].placement_group
+}
+
 output "server_instance_id" {
   description = "Self-managed NFS server instance ID (null for EFS)."
   value       = local.use_self_managed && length(aws_instance.nfs_server) > 0 ? aws_instance.nfs_server[0].id : null
