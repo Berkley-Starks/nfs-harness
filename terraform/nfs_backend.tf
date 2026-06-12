@@ -47,16 +47,20 @@ locals {
   #  - scoped to the fleet subnet CIDR, not the world (`*`);
   #  - root_squash so a compromised client's root maps to nfsnobody on the server
   #    (no remote-root -> local-root escalation on the export).
-  # The export rides on a DEDICATED data volume (provisioned throughput), found
-  # and mounted here, so it isn't capped by the root disk's gp3 baseline.
+  # The export rides on a DEDICATED non-root disk — either the local NVMe instance
+  # store (server_use_instance_store = true, bypassing EBS bandwidth limits) or the
+  # provisioned-throughput EBS volume below. Either way it surfaces as the one
+  # non-root NVMe device, found and mounted here.
   server_user_data = <<-EOF
     #!/bin/bash
     set -euxo pipefail
     dnf install -y nfs-utils
 
-    # Mount the dedicated export volume: find the attached non-root NVMe, format
-    # once (label so /etc/fstab survives NVMe name reshuffles), mount at the
-    # export path. Falls back to the root disk only if the volume never appears.
+    # Mount the export disk: find the attached non-root NVMe (the local instance
+    # store, or the EBS data volume — whichever this instance has), format once
+    # (label so /etc/fstab survives NVMe name reshuffles), mount at the export
+    # path. nofail keeps a blank/absent instance-store device from blocking boot.
+    # On instance-store this export is EPHEMERAL by design (throwaway test data).
     ROOT_DISK="$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" | head -1)"
     DATA_DISK=""
     for _try in $(seq 1 30); do
@@ -105,18 +109,23 @@ resource "aws_launch_template" "nfs_server" {
     }
   }
 
-  # Dedicated export volume with PROVISIONED throughput/IOPS, so the export isn't
-  # capped by the gp3 baseline (125 MB/s) the way the root disk was. Surfaces as a
-  # second NVMe device; user_data formats + mounts it at /srv/nfs/share.
-  block_device_mappings {
-    device_name = "/dev/sdf"
-    ebs {
-      volume_size           = var.server_data_volume_gb
-      volume_type           = var.server_data_volume_type
-      throughput            = var.server_data_volume_type == "gp3" ? var.server_data_volume_throughput : null
-      iops                  = var.server_data_volume_iops
-      encrypted             = true
-      delete_on_termination = true
+  # Dedicated export volume with PROVISIONED throughput/IOPS — used ONLY when
+  # server_use_instance_store = false. Surfaces as the non-root NVMe; user_data
+  # formats + mounts it at /srv/nfs/share. With instance-store on (the default)
+  # this block is omitted entirely and the local NVMe carries the export instead,
+  # taking EBS out of the data path so the instance-EBS-bandwidth cap can't bind.
+  dynamic "block_device_mappings" {
+    for_each = var.server_use_instance_store ? [] : [1]
+    content {
+      device_name = "/dev/sdf"
+      ebs {
+        volume_size           = var.server_data_volume_gb
+        volume_type           = var.server_data_volume_type
+        throughput            = var.server_data_volume_type == "gp3" ? var.server_data_volume_throughput : null
+        iops                  = var.server_data_volume_iops
+        encrypted             = true
+        delete_on_termination = true
+      }
     }
   }
 

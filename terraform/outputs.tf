@@ -44,6 +44,11 @@ output "server_capacity_type" {
   value       = local.use_self_managed ? var.server_capacity_type : "n/a (efs)"
 }
 
+output "server_storage_mode" {
+  description = "Where the NFS export lives: local NVMe instance store (bypasses EBS) or the provisioned-throughput EBS data volume."
+  value       = local.use_self_managed ? (var.server_use_instance_store ? "instance-store (local NVMe)" : "ebs (${var.server_data_volume_type} ${var.server_data_volume_throughput}MB/s)") : "n/a (efs)"
+}
+
 ###############################################################################
 # Fleet addresses — consumed by the Ansible inventory generator (bin/harness)
 # and by anyone SSHing in to debug. Public IPs for reach-in (admin_cidr-gated),

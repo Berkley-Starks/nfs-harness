@@ -118,15 +118,21 @@ variable "client_count" {
 }
 
 variable "client_instance_type" {
-  description = "Instance type for client nodes. t3.small is the cheap light-testing default, but it's BURSTABLE — its NIC allowance drains under sustained load (watch the ENA bw_out_allowance_exceeded panel), which adds credit-dependent tail latency and becomes the bottleneck once the server disk is fast. For a real bandwidth benchmark, move the load generators to a network-optimized type (c5n/m5n), which also satisfies cluster_clients (t3 can't join a cluster placement group)."
+  description = "Instance type for client load generators. Default is a network-optimized (c5n) type with guaranteed bandwidth and cluster-PG support. Do NOT use burstable (t3/t2): the NIC allowance drains under sustained load (watch the ENA bw_out_allowance_exceeded panel), adding credit-dependent, per-node tail latency that makes results a function of wall-clock time. t3.small is fine only for cheap smoke tests where throughput numbers don't matter."
   type        = string
-  default     = "t3.small"
+  default     = "c5n.large"
 }
 
 variable "server_instance_type" {
-  description = "Instance type for the self-managed NFS server (when nfs_backend = self_managed). Default is a network-optimized (c5n) type with guaranteed bandwidth: never benchmark on burstable (t3/t2), where the network baseline collapses to a few hundred Mbps once burst credits drain and results become a function of wall-clock time, not your variables."
+  description = "Instance type for the self-managed NFS server (when nfs_backend = self_managed). Default is m5dn.large: enhanced networking ('n') AND local NVMe instance store ('d'). The local NVMe (used when server_use_instance_store = true) takes EBS out of the data path entirely — the c5n family has the big NIC but no local disk, so its EBS baseline (0.65 Gbit/s on c5n.large) caps the export. Never benchmark on burstable (t3/t2), where the network baseline collapses once burst credits drain."
   type        = string
-  default     = "c5n.large"
+  default     = "m5dn.large"
+}
+
+variable "server_use_instance_store" {
+  description = "true = export rides on the server's LOCAL NVMe instance store (bypasses EBS, removing the instance-EBS-bandwidth cap that bound the gp3 run; requires a 'd'-family type like m5dn/c5d/i3en). false = export rides on the dedicated provisioned-throughput EBS volume below (works on any type, but is bounded by the instance's EBS pipe). Instance-store is EPHEMERAL — fine here because the test data is throwaway and the fleet is create/destroy, never stop/start."
+  type        = bool
+  default     = true
 }
 
 variable "server_root_volume_gb" {
@@ -136,14 +142,17 @@ variable "server_root_volume_gb" {
 }
 
 ###############################################################################
-# NFS server EXPORT data volume.
+# NFS server EXPORT data volume (the EBS path).
 #
-# The export (/srv/nfs/share) gets its OWN volume rather than riding on the root
-# disk — so its throughput/IOPS are a documented, provisioned variable instead of
-# the gp3 *baseline* (125 MB/s, 3k IOPS) that silently caps a benchmark. gp3
-# provisioned throughput is independent of size (up to 1000 MB/s, 16k IOPS); for
-# higher or more consistent performance, switch type to io2 or use instance-store
-# NVMe on a storage-optimized instance.
+# Used ONLY when server_use_instance_store = false. With instance-store on (the
+# default), these are ignored and the export rides the local NVMe instead.
+#
+# When in use: the export (/srv/nfs/share) gets its OWN volume rather than riding
+# on the root disk — so its throughput/IOPS are a documented, provisioned variable
+# instead of the gp3 *baseline* (125 MB/s, 3k IOPS). Note this still sits behind
+# the instance's EBS bandwidth pipe (e.g. ~0.65 Gbit/s on c5n.large), which is the
+# cap instance-store exists to bypass. gp3 provisioned throughput is independent of
+# size (up to 1000 MB/s, 16k IOPS); io2 for higher sustained performance.
 ###############################################################################
 
 variable "server_data_volume_gb" {
@@ -211,7 +220,7 @@ variable "enable_placement_group" {
 }
 
 variable "cluster_clients" {
-  description = "Also place the client fleet in the cluster placement group. Off by default because the cheap t3 client default is NOT a supported cluster-PG type — set client_instance_type to a network-optimized type (e.g. c5n.large) before enabling this for a true co-located low-latency run."
+  description = "Also place the client fleet in the cluster placement group for a co-located, low-variance run. The c5n.large client default supports cluster PGs; off by default only because pinning the whole fleet into one PG in a single AZ can make spot capacity harder to satisfy. Enable for a true co-located low-latency benchmark."
   type        = bool
   default     = false
 }
