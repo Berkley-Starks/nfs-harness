@@ -49,8 +49,14 @@ variable "grafana_admin_password" {
   sensitive   = true
 }
 
+variable "prometheus_enable_basic_auth" {
+  description = "Enable Prometheus HTTP basic auth (bcrypt-hashed on the box; Grafana datasource wired with the creds). Default off: it's a hardening extra, and the metrics matter more than auth on a private-subnet/admin-gated box. Turn on once validated."
+  type        = bool
+  default     = false
+}
+
 variable "prometheus_basic_auth_user" {
-  description = "Username for Prometheus HTTP basic auth (the box hashes the password with bcrypt at boot; Grafana's datasource is wired with these creds)."
+  description = "Username for Prometheus HTTP basic auth (used only when prometheus_enable_basic_auth = true)."
   type        = string
   default     = "prometheus"
 }

@@ -81,6 +81,7 @@ resource "aws_instance" "prometheus" {
   user_data = templatefile("${path.module}/templates/cloud-init.sh.tftpl", {
     scrape_targets_yaml            = local.scrape_targets_yaml
     grafana_admin_password         = var.grafana_admin_password
+    prometheus_enable_basic_auth   = var.prometheus_enable_basic_auth
     prometheus_basic_auth_user     = var.prometheus_basic_auth_user
     prometheus_basic_auth_password = var.prometheus_basic_auth_password
   })
