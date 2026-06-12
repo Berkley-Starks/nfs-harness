@@ -42,9 +42,15 @@ variable "vpc_cidr" {
 }
 
 variable "subnet_cidr" {
-  description = "CIDR block for the single public subnet (sufficient for a throwaway harness)."
+  description = "CIDR block for the public subnet (obs box, NAT gateway, and the fleet in public mode)."
   type        = string
   default     = "10.42.1.0/24"
+}
+
+variable "private_subnet_cidr" {
+  description = "CIDR block for the private fleet subnet (used only when private_networking = true)."
+  type        = string
+  default     = "10.42.2.0/24"
 }
 
 ###############################################################################
@@ -127,6 +133,33 @@ variable "server_root_volume_gb" {
   description = "Root volume size (GB) for the self-managed NFS server. The export (/srv/nfs/share) lives here, so it must hold the workload's working set: fio writes FILE_SIZE x NUMJOBS per client (default 2 GB) across all clients. The AL2023 default root (~8 GB) overflows past a few clients, so default generously."
   type        = number
   default     = 100
+}
+
+variable "client_root_volume_gb" {
+  description = "Root volume size (GB) for each client. The AL2023 default (~2 GB) is tight once node_exporter + the workload container land; give modest headroom. The volume is encrypted regardless."
+  type        = number
+  default     = 10
+}
+
+###############################################################################
+# Network posture — the public/private toggle.
+#
+# Default (false) keeps the cheap single-public-subnet layout: instances get
+# public IPs, SSH is admin_cidr-gated. Fine for throwaway light testing.
+#
+# private_networking = true is the production-grade posture:
+#   - the fleet (clients + server) moves to a PRIVATE subnet with NO public IPs;
+#   - a NAT gateway in a public subnet provides egress (package/image pulls);
+#   - access + Ansible go through SSM Session Manager (no SSH inbound at all),
+#     so the fleet has zero internet-reachable surface.
+# The observability box stays in the public subnet as the single, admin_cidr-
+# restricted public entry point.
+###############################################################################
+
+variable "private_networking" {
+  description = "true = fleet in a private subnet (no public IPs) + NAT egress + SSM access (no SSH inbound). false = single public subnet with admin_cidr-gated SSH (cheap default for light testing)."
+  type        = bool
+  default     = false
 }
 
 ###############################################################################

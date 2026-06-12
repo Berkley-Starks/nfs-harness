@@ -48,3 +48,16 @@ variable "grafana_admin_password" {
   default     = "changeme-harness"
   sensitive   = true
 }
+
+variable "prometheus_basic_auth_user" {
+  description = "Username for Prometheus HTTP basic auth (the box hashes the password with bcrypt at boot; Grafana's datasource is wired with these creds)."
+  type        = string
+  default     = "prometheus"
+}
+
+variable "prometheus_basic_auth_password" {
+  description = "Password for Prometheus HTTP basic auth. Override in tfvars; do not commit a real one."
+  type        = string
+  default     = "changeme-harness"
+  sensitive   = true
+}

@@ -128,7 +128,8 @@ cp terraform/observability/terraform.tfvars.example terraform/observability/terr
 
 `harness up` flags: `--clients N`, `--backend efs|self_managed`,
 `--capacity spot|on_demand` (both tiers; override one with `--client-capacity` /
-`--server-capacity`), `--instance` / `--server-instance TYPE`, `--no-config`
+`--server-capacity`), `--instance` / `--server-instance TYPE`, `--private`
+(hardened private/SSM posture), `--no-pg` (skip placement group), `--no-config`
 (skip Ansible). Raw `terraform` plan/apply/validate still works inside
 `terraform/` and `terraform/observability/`.
 
@@ -215,12 +216,49 @@ inline role policies back), the EC2-Spot service-linked role, and
 
 ---
 
+## Network posture & hardening
+
+The harness ships with a **`private_networking` toggle** (default off) so the
+cheap public layout stays available for light testing, while a single switch
+flips the whole thing to a production-grade posture.
+
+**Default (public):** one public subnet; instances get public IPs; SSH and the
+Grafana/Prometheus UIs are gated to `admin_cidr` (never `0.0.0.0/0`). Good enough
+for throwaway runs, cheap (no NAT).
+
+**`private_networking = true` (or `./bin/harness up --private`):**
+- the **fleet (clients + server) moves to a private subnet with no public IPs**;
+- a **NAT gateway** provides egress (package/image pulls) — nothing inbound;
+- access + Ansible go through **SSM Session Manager** (no SSH inbound anywhere,
+  fully audited); the fleet's only inbound surface is *gone*;
+- the observability box remains the single, `admin_cidr`-restricted public entry.
+
+**Always-on hardening (both modes):**
+- **NFS export scoped + squashed** — `root_squash` and exported only to the fleet
+  CIDR, instead of the original `*(...,no_root_squash)` (no remote-root→local-root
+  on the share, no world export).
+- **All EBS volumes encrypted** (fleet roots, server export, obs box, metrics).
+- **Prometheus HTTP basic auth** — the box bcrypt-hashes the password at boot and
+  wires Grafana's datasource with the creds (Prometheus had *no* auth before).
+- **IMDSv2 required**, SSH key-only.
+
+The private posture's IAM surface (NAT/EIP, the SSM transfer bucket, SSM sessions,
+the instance profile) is in the policy file and documented as gap #11 in
+[`docs/tight-iam-gaps.md`](docs/tight-iam-gaps.md). It's `terraform validate`/`plan`
+clean; the Ansible-over-SSM path needs the `session-manager-plugin` and the
+`community.aws` collection on the control host, and should be confirmed on the
+first private deploy.
+
+---
+
 ## Lifecycle & cost model
 
 - **Idle:** one small `gp3` EBS volume (observability metrics) ≈ a couple dollars
   a month. Nothing else runs between cycles.
 - **During a run:** 3× `t3.small` on-demand + EFS + the obs box + a 10 GB EBS
   ≈ **$0.12/hr**. On spot, the fleet is 70–90% cheaper.
+- **Private posture** adds a NAT gateway (~$0.045/hr + data) — the price of zero
+  inbound surface. Off by default; only incurred with `private_networking`.
 - **Guardrail:** even a forgotten test plane self-destructs after N hours.
 
 ---

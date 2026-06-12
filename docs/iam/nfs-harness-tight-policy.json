@@ -26,6 +26,10 @@
 				"ec2:ModifyNetworkInterfaceAttribute",
 				"ec2:CreatePlacementGroup",
 				"ec2:CancelSpotInstanceRequests",
+				"ec2:AllocateAddress",
+				"ec2:CreateNatGateway",
+				"ec2:AssociateIamInstanceProfile",
+				"ec2:ReplaceIamInstanceProfileAssociation",
 				"ec2:CreateTags"
 			],
 			"Resource": "*"
@@ -55,6 +59,9 @@
 				"ec2:ModifySubnetAttribute",
 				"ec2:DeleteVolume",
 				"ec2:DeletePlacementGroup",
+				"ec2:ReleaseAddress",
+				"ec2:DeleteNatGateway",
+				"ec2:DisassociateIamInstanceProfile",
 				"ec2:DeleteTags"
 			],
 			"Resource": "*",
@@ -175,6 +182,42 @@
 					"iam:AWSServiceName": "spot.amazonaws.com"
 				}
 			}
+		},
+		{
+			"Sid": "PrivateNetworkingSsmBucket",
+			"Effect": "Allow",
+			"Action": [
+				"s3:CreateBucket",
+				"s3:DeleteBucket",
+				"s3:ListBucket",
+				"s3:GetBucketLocation",
+				"s3:GetBucketTagging",
+				"s3:PutBucketTagging",
+				"s3:PutBucketPublicAccessBlock",
+				"s3:GetBucketPublicAccessBlock",
+				"s3:PutEncryptionConfiguration",
+				"s3:GetEncryptionConfiguration",
+				"s3:GetObject",
+				"s3:PutObject",
+				"s3:DeleteObject"
+			],
+			"Resource": [
+				"arn:aws:s3:::nfs-harness-ssm-*",
+				"arn:aws:s3:::nfs-harness-ssm-*/*"
+			]
+		},
+		{
+			"Sid": "PrivateNetworkingSsmSessions",
+			"Effect": "Allow",
+			"Action": [
+				"ssm:StartSession",
+				"ssm:TerminateSession",
+				"ssm:ResumeSession",
+				"ssm:DescribeSessions",
+				"ssm:GetConnectionStatus",
+				"ssm:DescribeInstanceInformation"
+			],
+			"Resource": "*"
 		}
 	]
 }

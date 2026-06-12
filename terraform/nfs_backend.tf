@@ -30,7 +30,7 @@ resource "aws_efs_file_system" "this" {
 resource "aws_efs_mount_target" "this" {
   count           = local.use_efs ? 1 : 0
   file_system_id  = aws_efs_file_system.this[0].id
-  subnet_id       = aws_subnet.harness.id
+  subnet_id       = local.fleet_subnet_id
   security_groups = [aws_security_group.nfs_server.id]
 }
 
@@ -43,13 +43,17 @@ resource "aws_efs_mount_target" "this" {
 # user-data: install nfs server, export a directory. Minimal on purpose; Ansible
 # will own deeper config once that layer lands.
 locals {
+  # Export hardening vs the original `*(...,no_root_squash)`:
+  #  - scoped to the fleet subnet CIDR, not the world (`*`);
+  #  - root_squash so a compromised client's root maps to nfsnobody on the server
+  #    (no remote-root -> local-root escalation on the export).
   server_user_data = <<-EOF
     #!/bin/bash
     set -euxo pipefail
     dnf install -y nfs-utils
     mkdir -p /srv/nfs/share
-    chmod 777 /srv/nfs/share
-    echo "/srv/nfs/share *(rw,sync,no_subtree_check,no_root_squash)" > /etc/exports
+    chmod 1777 /srv/nfs/share
+    echo "/srv/nfs/share ${local.fleet_cidr}(rw,sync,no_subtree_check,root_squash)" > /etc/exports
     systemctl enable --now nfs-server
     exportfs -ra
   EOF
@@ -73,6 +77,7 @@ resource "aws_launch_template" "nfs_server" {
     ebs {
       volume_size           = var.server_root_volume_gb
       volume_type           = "gp3"
+      encrypted             = true
       delete_on_termination = true
     }
   }
@@ -107,7 +112,10 @@ resource "aws_instance" "nfs_server" {
     version = "$Latest"
   }
 
-  subnet_id = aws_subnet.harness.id
+  subnet_id = local.fleet_subnet_id
+
+  # SSM instance profile in private mode; null in public mode.
+  iam_instance_profile = local.fleet_instance_profile
 
   # Low-latency, low-variance path to the clients. null when the PG is disabled.
   placement_group = local.server_placement_group

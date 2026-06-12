@@ -212,6 +212,28 @@ and so aren't covered by the tag-conditioned create grants.
   needs the updated policy pasted in** before a spot `down` works on tight.
   Until then, destroy spot fleets with broad.
 
+### 11. Private-networking posture — NAT / EIP / S3 / SSM (added, not yet deployed)
+- **When:** hardening pass (2026-06-11), the `private_networking = true` posture
+  (private fleet subnet, NAT egress, SSM access, no public IPs/SSH).
+- **New permissions added to the policy file** (all for private mode only):
+  - EC2 build (unconditioned): `ec2:AllocateAddress`, `ec2:CreateNatGateway`,
+    `ec2:AssociateIamInstanceProfile`, `ec2:ReplaceIamInstanceProfileAssociation`.
+  - EC2 destroy (ResourceTag-gated): `ec2:ReleaseAddress`, `ec2:DeleteNatGateway`,
+    `ec2:DisassociateIamInstanceProfile`.
+  - `PrivateNetworkingSsmBucket` (new): S3 lifecycle on the SSM transfer bucket,
+    scoped to `arn:aws:s3:::nfs-harness-ssm-*`.
+  - `PrivateNetworkingSsmSessions` (new): `ssm:StartSession` + session mgmt, so
+    the Ansible `aws_ssm` connection can reach the private fleet.
+  - Reuses existing scoped IAM verbs for the `nfs-harness-ssm` role + instance
+    profile (`iam:CreateRole`/`PassRole`/`AddRoleToInstanceProfile`/etc., already
+    scoped to `nfs-harness-*`; `iam:AttachRolePolicy` covers attaching the
+    AWS-managed `AmazonSSMManagedInstanceCore`).
+- **Status:** in the policy file; **NOT yet validated against a live apply**
+  (private mode hasn't been deployed). Verify the NAT/EIP tag-condition legs and
+  the SSM-session resource scoping on first private deploy. The control host also
+  needs the `session-manager-plugin` binary and the `community.aws`/`amazon.aws`
+  Ansible collections.
+
 ## Still UNKNOWN (resolve on next apply)
 
 - `ec2:CreateSubnet/InternetGateway/RouteTable/Route/AssociateRouteTable/CreateSecurityGroup/AuthorizeSecurityGroup*`

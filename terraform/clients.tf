@@ -33,6 +33,18 @@ resource "aws_launch_template" "client" {
 
   vpc_security_group_ids = [aws_security_group.clients.id]
 
+  # Encrypted root with modest headroom (the AL2023 default is ~2 GB, tight once
+  # node_exporter + the workload container land).
+  block_device_mappings {
+    device_name = data.aws_ami.al2023.root_device_name
+    ebs {
+      volume_size           = var.client_root_volume_gb
+      volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
   # Conditionally request spot. When on_demand, omit the spot block entirely so
   # the instance is launched as standard on-demand capacity.
   dynamic "instance_market_options" {
@@ -65,7 +77,11 @@ resource "aws_instance" "client" {
     version = "$Latest"
   }
 
-  subnet_id = aws_subnet.harness.id
+  subnet_id = local.fleet_subnet_id
+
+  # SSM instance profile in private mode (enables agent registration + Ansible
+  # over SSM); null in public mode.
+  iam_instance_profile = local.fleet_instance_profile
 
   # Joins the server's cluster PG only when cluster_clients is set AND the client
   # type supports it (network-optimized, not the t3 default). null otherwise.

@@ -79,8 +79,10 @@ resource "aws_instance" "prometheus" {
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/templates/cloud-init.sh.tftpl", {
-    scrape_targets_yaml    = local.scrape_targets_yaml
-    grafana_admin_password = var.grafana_admin_password
+    scrape_targets_yaml            = local.scrape_targets_yaml
+    grafana_admin_password         = var.grafana_admin_password
+    prometheus_basic_auth_user     = var.prometheus_basic_auth_user
+    prometheus_basic_auth_password = var.prometheus_basic_auth_password
   })
 
   # The scrape-target list is baked into user_data, so when the fleet changes the
@@ -94,6 +96,7 @@ resource "aws_instance" "prometheus" {
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
+    encrypted   = true
   }
 
   # Recreate the box, not the data: changes to user-data replace the instance,

@@ -85,6 +85,36 @@ output "placement_group" {
   value       = var.enable_placement_group ? one(aws_placement_group.cluster[*].name) : null
 }
 
+###############################################################################
+# Network posture + SSM wiring — consumed by bin/harness to build the right
+# Ansible inventory (SSH-over-public-IP vs aws_ssm-over-instance-id).
+###############################################################################
+
+output "private_networking" {
+  description = "Whether the fleet is in the private/SSM posture (no public IPs)."
+  value       = var.private_networking
+}
+
+output "region" {
+  description = "AWS region (consumed by the SSM Ansible connection)."
+  value       = var.region
+}
+
+output "client_instance_ids" {
+  description = "Client instance IDs, in fleet order (SSM inventory targets in private mode)."
+  value       = aws_instance.client[*].id
+}
+
+output "server_instance_id" {
+  description = "Self-managed NFS server instance ID (null for EFS)."
+  value       = local.use_self_managed && length(aws_instance.nfs_server) > 0 ? aws_instance.nfs_server[0].id : null
+}
+
+output "ssm_bucket" {
+  description = "S3 bucket the Ansible aws_ssm connection stages modules through (null in public mode)."
+  value       = var.private_networking ? one(aws_s3_bucket.ssm[*].id) : null
+}
+
 output "teardown_lambda" {
   description = "Name of the auto-teardown guardrail Lambda (null when disabled)."
   value       = var.teardown_enabled ? aws_lambda_function.teardown[0].function_name : null

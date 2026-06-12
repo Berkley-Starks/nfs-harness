@@ -48,6 +48,17 @@ systemctl enable --now docker
 
 ############################ 3. prometheus config ###########################
 mkdir -p /etc/prometheus
+
+# HTTP basic auth for Prometheus. The web.config wants a bcrypt hash, so generate
+# it on the box (htpasswd) rather than passing a hash through templating — only
+# the plaintext password crosses the template boundary.
+dnf install -y httpd-tools
+PROM_HASH="$(htpasswd -nbBC 10 '${prometheus_basic_auth_user}' '${prometheus_basic_auth_password}' | cut -d: -f2)"
+cat > /etc/prometheus/web.yml <<WEBCFG
+basic_auth_users:
+  ${prometheus_basic_auth_user}: $PROM_HASH
+WEBCFG
+
 cat > /etc/prometheus/prometheus.yml <<PROM
 global:
   scrape_interval: 10s
@@ -55,6 +66,10 @@ global:
 
 scrape_configs:
   - job_name: prometheus
+    # Self-scrape now goes through basic auth too.
+    basic_auth:
+      username: ${prometheus_basic_auth_user}
+      password: ${prometheus_basic_auth_password}
     static_configs:
       - targets: ['localhost:9090']
 
@@ -76,6 +91,10 @@ datasources:
     access: proxy
     url: http://localhost:9090
     isDefault: true
+    basicAuth: true
+    basicAuthUser: ${prometheus_basic_auth_user}
+    secureJsonData:
+      basicAuthPassword: ${prometheus_basic_auth_password}
 DS
 
 cat > /etc/grafana/provisioning/dashboards/harness.yml <<DP
@@ -147,6 +166,7 @@ docker run -d --name prometheus --restart unless-stopped --network host \
   -v /data/prometheus:/prometheus \
   prom/prometheus:latest \
   --config.file=/etc/prometheus/prometheus.yml \
+  --web.config.file=/etc/prometheus/web.yml \
   --storage.tsdb.path=/prometheus
 
 docker run -d --name grafana --restart unless-stopped --network host \
