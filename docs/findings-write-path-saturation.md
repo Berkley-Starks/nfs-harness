@@ -155,12 +155,15 @@ the harness created, measured by a dashboard that cannot see latency.
       125 MB/s baseline. New `server_data_volume_*` vars: a separate gp3 (or io2)
       device at 500 MB/s / 4000 IOPS, mounted at `/srv/nfs/share`; root shrinks to
       OS-only.
-- [ ] **Size the instance for EBS *bandwidth*, or bypass EBS entirely.** Run 3
-      showed the dedicated volume's own limits are no longer binding — the
-      *instance's* EBS pipe is (c5n.large baseline ≈ 0.65 Gbit/s). Either move up
-      to c5n.xlarge+ (≈1.15 Gbit/s baseline) or use an instance-store NVMe type
-      (c5d/m5dn/i3en) to take EBS out of the path. Or document 0.65 Gbit/s as the
-      intended storage constraint and benchmark against it deliberately.
+- [x] **Bypass EBS entirely with instance-store NVMe.** Run 3 showed the dedicated
+      volume's own limits are no longer binding — the *instance's* EBS pipe is
+      (c5n.large baseline ≈ 0.65 Gbit/s). Resolved 2026-06-11: server defaults to
+      `m5dn.large` (enhanced net + local NVMe) and `server_use_instance_store=true`,
+      so the export rides the local NVMe and EBS leaves the data path. Toggle off to
+      fall back to the provisioned-throughput EBS volume for non-`d` types. *(Awaits
+      a Run 4 to confirm the local NVMe clears 0.65 Gbit/s and the next cap appears —
+      expected to be the burstable clients, now also fixed: client default →
+      `c5n.large`.)*
 - [ ] `nconnect=4–16` to parallelize per-client transport and stop writes
       head-of-line-blocking reads on the shared TCP connection.
 - [ ] `wsize=1M` (currently shipping ~89 KB per WRITE).

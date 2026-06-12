@@ -87,18 +87,24 @@ both planes sit in.
    itself. Each layer stays in its lane.
 
 7. **Benchmark correctness: make every baseline-capped resource a documented
-   variable.** Burstable instances and baseline-throughput volumes both fail the
-   same way — a hidden ceiling that turns results into a function of wall-clock
-   time. So: the server defaults to a **network-optimized** instance (`c5n.large`)
-   in a single-AZ **cluster placement group** (never burstable); the export rides
-   a **dedicated, provisioned-throughput EBS volume** (`server_data_volume_*`, gp3
-   500 MB/s by default — or io2/instance-store), not the gp3-baseline root disk;
-   and the dashboard charts what would otherwise hide a cap — ENA
-   `bw_in/out_allowance_exceeded`, disk throughput/util, iowait split out of CPU,
-   and NFS RTT-vs-queue. If a constrained link *is* the variable, a `tc` egress cap
-   (`server_egress_cap_mbit`) imposes it reproducibly instead of by accident.
+   variable.** Burstable instances, baseline-throughput volumes, and the
+   per-instance EBS pipe all fail the same way — a hidden ceiling that turns
+   results into a function of wall-clock time. So: both the server and the
+   **clients** default to **network-optimized** instances (`m5dn.large` /
+   `c5n.large`, never burstable), optionally in a single-AZ **cluster placement
+   group**; the export rides the server's **local NVMe instance store** by default
+   (`server_use_instance_store`), which takes EBS out of the data path entirely —
+   the prior gp3 volume was fast enough, but the *instance's* EBS baseline
+   (~0.65 Gbit/s on c5n.large) still capped it. (Flip the toggle off to fall back
+   to a **dedicated, provisioned-throughput EBS volume**, `server_data_volume_*`,
+   for any non-`d` instance type.) The dashboard charts what would otherwise hide a
+   cap — ENA `bw_in/out_allowance_exceeded`, disk throughput/util, iowait split out
+   of CPU, and NFS RTT-vs-queue. If a constrained link *is* the variable, a `tc`
+   egress cap (`server_egress_cap_mbit`) imposes it reproducibly instead of by
+   accident.
    *(This is the loop in action: each run surfaces the next hidden ceiling — NIC,
-   then disk — and turns it into a knob. See [`docs/findings-write-path-saturation.md`](docs/findings-write-path-saturation.md).)*
+   then root disk, then the volume, then the instance's EBS pipe — and turns it into
+   a knob. See [`docs/findings-write-path-saturation.md`](docs/findings-write-path-saturation.md).)*
 
 ---
 
@@ -259,8 +265,10 @@ first private deploy.
 
 - **Idle:** one small `gp3` EBS volume (observability metrics) ≈ a couple dollars
   a month. Nothing else runs between cycles.
-- **During a run:** 3× `t3.small` on-demand + EFS + the obs box + a 10 GB EBS
-  ≈ **$0.12/hr**. On spot, the fleet is 70–90% cheaper.
+- **During a run:** the benchmark default is network-optimized — e.g. 5× `c5n.large`
+  clients + an `m5dn.large` server + the obs box ≈ **$1/hr** on-demand; on spot the
+  fleet is 70–90% cheaper. For cheap smoke tests, drop the clients to `t3.small`
+  (`--instance t3.small`) and a 3-node fleet on EFS runs ≈ **$0.12/hr**.
 - **Private posture** adds a NAT gateway (~$0.045/hr + data) — the price of zero
   inbound surface. Off by default; only incurred with `private_networking`.
 - **Guardrail:** even a forgotten test plane self-destructs after N hours.
