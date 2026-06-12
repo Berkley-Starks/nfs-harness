@@ -26,6 +26,7 @@ This isn't a paper design — every layer has been run against real AWS:
 | **Smoke load (3× `t3.small`, EFS backend)** | **~2,700 NFS ops/s · ~97 MB/s write · ~900 ops/s per node · 80–86% CPU** |
 | **Benchmark load (5× `c5n.large` + `m5dn.large` self-managed, all spot)** | export on **local-NVMe instance store**, cluster PG, 6/6 node_exporters `UP`, zero RPC retransmits |
 | **Iterative bottleneck isolation** | each run surfaced and removed the next hidden ceiling — server NIC allowance → root-disk gp3 baseline → volume gp3 baseline → **instance EBS pipe** (~0.65 Gbit/s on c5n.large) → now on instance-store NVMe. See [findings](docs/findings-write-path-saturation.md). |
+| **DSX dual-protocol mode (`--dsx-mode`)** | host-kernel **NFSv4.2** + a netns-isolated, cgroup-capped **NFSv3 portal** on the same server, both on `:2049`; clients dual-mount and drive identical load; Grafana splits the protocols per export (first run: 4.2 ≈ 42 MB/s vs capped portal ≈ 20 MB/s). See [docs/dsx-mode.md](docs/dsx-mode.md). |
 | Observability scrapes the fleet | all node_exporters `UP`, NFS mountstats flowing to Grafana |
 | Metrics volume survives instance replacement | EBS re-attached automatically on obs-box replace |
 | Full teardown | `terraform destroy` EXIT 0, verified $0 left running |
@@ -108,6 +109,16 @@ both planes sit in.
    then root disk, then the volume, then the instance's EBS pipe — and turns it into
    a knob. See [`docs/findings-write-path-saturation.md`](docs/findings-write-path-saturation.md).)*
 
+8. **Containers from kernel primitives — the DSX protocol portal.** `--dsx-mode`
+   adds a second, **NFSv3-only** server on the self-managed box: an in-kernel
+   nfsd inside a hand-built network + mount namespace (own `:2049` — per-netns
+   port space; own `/proc/fs/nfsd` control mount), reached over a veth pair the
+   VPC routes to, and bounded by a cgroup v2 cap. No Docker — `ip netns`,
+   `unshare -m`, `mount -t nfsd`. Clients mount 4.2 and v3 side by side and the
+   dashboard compares the protocols under identical load. Mechanism, de-risk
+   evidence, and the v3-vs-4.2 `root_squash` finding:
+   [`docs/dsx-mode.md`](docs/dsx-mode.md).
+
 ---
 
 ## Current defaults
@@ -127,6 +138,7 @@ drop to `t3.small`/EFS for smoke tests.
 | `cluster_clients` | `false` | clients join the PG only with `--cluster-clients` (kept off so spot capacity is easier to satisfy) |
 | `private_networking` | `false` | cheap public layout (admin-gated SSH); `--private` flips to private subnet + NAT + SSM |
 | `prometheus_enable_basic_auth` | `false` | opt-in hardening; off by default so the metrics path is the proven one (see hardening note) |
+| `dsx_mode` | `false` | `--dsx-mode` adds the NFSv3 protocol portal (netns + cgroup) beside the host's NFSv4.2 — self_managed only |
 
 **Known open item (under investigation):** on identical clients, ENA tx-allowance
 clipping is *asymmetric* and sub-baseline — almost certainly buffered-writeback
@@ -169,9 +181,10 @@ cp terraform/observability/terraform.tfvars.example terraform/observability/terr
 `--capacity spot|on_demand` (both tiers; override one with `--client-capacity` /
 `--server-capacity`), `--instance` / `--server-instance TYPE`, `--private`
 (hardened private/SSM posture), `--no-pg` (skip placement group),
-`--cluster-clients` (co-locate clients in the PG too), `--no-config`
-(skip Ansible). Raw `terraform` plan/apply/validate still works inside
-`terraform/` and `terraform/observability/`.
+`--cluster-clients` (co-locate clients in the PG too), `--dsx-mode`
+(dual-protocol NFSv4.2 + NFSv3 portal — needs `--nfs self_managed`),
+`--no-config` (skip Ansible). Raw `terraform` plan/apply/validate still works
+inside `terraform/` and `terraform/observability/`.
 
 ---
 
@@ -205,12 +218,15 @@ nfs-harness/
 ├── docs/
 │   ├── SETUP_GUIDE.md              # from-scratch setup/ops guide + troubleshooting
 │   ├── findings-write-path-saturation.md  # the iterative bottleneck-isolation log (Runs 1–5)
+│   ├── dsx-mode.md                 # dual-protocol portal: mechanism + findings + talking points
+│   ├── dsx-derisk/                 # live-box kernel-claim probes (the proof artifacts)
 │   ├── tight-iam-gaps.md           # the least-privilege IAM journey (gap ledger)
 │   ├── iam/nfs-harness-tight-policy.json   # validated tight policy
-│   └── diagrams/                   # architecture diagram
+│   └── diagrams/                   # architecture + dsx-mode diagrams
 ├── terraform/                      # test plane + guardrail (one state)
 │   ├── providers.tf variables.tf network.tf data.tf
 │   ├── nfs_backend.tf              # selectable EFS / self-managed
+│   ├── dsx.tf                      # DSX portal VPC plumbing (route, src/dst-check, SG)
 │   ├── clients.tf                  # spot/on-demand client fleet (var-driven count)
 │   ├── teardown.tf                 # Lambda + EventBridge cost guardrail
 │   ├── outputs.tf
@@ -219,7 +235,8 @@ nfs-harness/
 │       └── templates/cloud-init.sh.tftpl
 ├── ansible/                        # config layer
 │   ├── site.yml ansible.cfg requirements.yml
-│   └── roles/{node_exporter,nfs_client,nfs_server,workload}/  # nfs_server = optional tc egress cap
+│   ├── group_vars/all.yml          # dsx values shared by server + client plays
+│   └── roles/{node_exporter,nfs_client,nfs_server,workload}/  # nfs_server = tc cap + dsx portal
 ├── workload/                       # containerized fio NFS load generator
 │   ├── Dockerfile run-load.sh
 ├── lambda/teardown.py              # guardrail handler
@@ -361,7 +378,8 @@ This is a working PoC; these are the next features on the roadmap (not yet built
 - S3 remote state + DynamoDB locking (upgrade path is stubbed in `providers.tf`).
 - Autoscaling-group client fleet with mixed-instances spot policy.
 - Grafana alerting on NFS latency/error-rate thresholds; longer-retention TSDB.
-- Wire in the actual storage product as a third `nfs_backend` option.
+- Wire in the actual storage product as a third `nfs_backend` option — the
+  `--dsx-mode` portal already models its protocol-portal layer and marks the seam.
 - CI that runs `terraform validate` + `tflint` + a plan on PRs.
 
 See [`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md) for a from-scratch setup + troubleshooting guide.

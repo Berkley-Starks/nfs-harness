@@ -202,6 +202,18 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
       "description": "node_ethtool_bw_out_allowance_exceeded rate, per client. node_exporter scrapes at 10s so this is a microburst PROXY: the counter accumulates every sub-second clip between scrapes. Correlate spikes here with the WRITE panel on the left (same time axis) and watch whether the heavy set is FIXED to instances (structural) or MIGRATES (phase desync).",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
       "targets": [ { "expr": "rate(node_ethtool_bw_out_allowance_exceeded[1m])", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "DSX · throughput by export — NFSv4.2 host vs NFSv3 portal (bytes/s)",
+      "description": "The dual-protocol comparison (dsx_mode runs; empty otherwise). Same clients, same fio workload — the export label splits the host kernel's NFSv4.2 share from the netns-isolated, cgroup-capped NFSv3 portal, so the protocol (plus the portal's deliberate 0.5-CPU cap and forwarded path) is the only variable. First live run: 4.2 ≈ 2× the capped portal.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "targets": [ { "expr": "sum by (export) (rate(node_mountstats_nfs_read_bytes_total[1m]) + rate(node_mountstats_nfs_write_bytes_total[1m]))", "legendFormat": "{{export}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "DSX · NFS operations/s by export — v4.2 vs v3 op-rate shape",
+      "description": "Companion to the throughput panel: op RATES by export. v3 and v4.2 decompose the same fio I/O into different operation mixes (v4.2 compounds; v3 needs separate LOOKUP/GETATTR round-trips), so equal byte-throughput does NOT mean equal op-rates — the gap between these panels IS the protocol-efficiency story.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "targets": [ { "expr": "sum by (export) (rate(node_mountstats_nfs_operations_requests_total[1m]))", "legendFormat": "{{export}}" } ]
     }
   ]
 }

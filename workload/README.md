@@ -18,6 +18,10 @@ mounted NFS share. The Ansible `workload` role builds it **on each client**
 
 Each client writes under `/data/load/<hostname>/` so the fleet doesn't collide.
 
+In **DSX mode** (`--dsx-mode`) each client runs a *second*, identical container
+(`nfs-harness-workload-dsx`) bound to the NFSv3 portal mount — same image, same
+env, so in the Grafana per-export comparison the protocol is the only variable.
+
 **Testing note.** The generator currently runs **buffered** (`fio --direct=0`), so
 writes land in the page cache and the kernel flushes them in **line-rate bursts**.
 With each client free-running its own `LOOP` cycle, the fleet drifts out of phase —

@@ -139,6 +139,7 @@ Per-run knobs are **flags** (no tfvars edits; `--flag value` or `--flag=value`):
 ```
 ./bin/harness up --nfs=self_managed --clients=20 --cluster-clients  # self-managed + 20 co-located clients
 ./bin/harness up --nfs=efs --instance=t3.small --clients=5          # cheap smoke test (burstable clients)
+./bin/harness up --nfs=self_managed --dsx-mode --clients=2          # dual-protocol: host NFSv4.2 + NFSv3 portal
 ./bin/harness up                                          # defaults: efs, c5n.large clients, spot, 3 clients
 ```
 Unset flags fall back to terraform defaults (`efs` backend / `c5n.large` clients /
