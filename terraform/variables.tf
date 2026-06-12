@@ -74,6 +74,18 @@ variable "nfs_backend" {
   }
 }
 
+variable "dsx_mode" {
+  description = "Model Hammerspace DSX protocol-portal containerization on the self-managed server: host kernel serves NFSv4.2 while a netns-isolated, cgroup-capped NFSv3 portal also binds :2049 (separate per-netns port space). Additive and default-off; only valid with nfs_backend = self_managed (EFS is managed and can't host the portal)."
+  type        = bool
+  default     = false
+
+  # Cross-variable validation (Terraform 1.9+; see required_version in providers.tf).
+  validation {
+    condition     = var.dsx_mode == false || var.nfs_backend == "self_managed"
+    error_message = "dsx_mode = true requires nfs_backend = \"self_managed\" (EFS can't host the containerized v3 portal)."
+  }
+}
+
 ###############################################################################
 # Capacity type — independently flippable for server vs clients.
 # Clients are textbook spot (cattle). Server is more pet: spot is fine for

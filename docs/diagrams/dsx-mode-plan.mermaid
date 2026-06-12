@@ -1,0 +1,45 @@
+graph TB
+    subgraph CTRL["bin/harness  (control wrapper)"]
+        FLAG["new flag: --dsx-mode<br/>sets TF var dsx_mode=true<br/>(only valid with --nfs self_managed)"]
+    end
+
+    subgraph TF["Terraform — infrastructure layer"]
+        VAR["variables.tf<br/>+ dsx_mode (bool, default false)<br/>+ validation: requires self_managed"]
+        NFSB["nfs_backend.tf<br/>self_managed server node<br/>passes dsx_mode -> inventory/tag"]
+        VAR --> NFSB
+    end
+
+    subgraph ANS["Ansible — configuration layer"]
+        SERVER["roles/nfs_server<br/>(existing: plain nfsd + tc cap)"]
+        DSX["roles/nfs_server/tasks/dsx.yml  (NEW)<br/>included when dsx_mode | bool<br/>• host kernel nfsd = NFSv4.2 (primary)<br/>• netns 'dsx-v3' + veth pair<br/>• cgroup v2 cap (cpu.max / memory.max)<br/>• v3 nfsd inside netns on :2049<br/>• systemd unit: survives reboot"]
+        SERVER -. "import_tasks when dsx_mode" .-> DSX
+    end
+
+    subgraph NODE["self_managed server node (the SUT)"]
+        HOST["HOST netns<br/>kernel nfsd → NFSv4.2<br/>:2049 (host stack)"]
+        PORTAL["netns dsx-v3<br/>nfsd → NFSv3 ONLY<br/>:2049 (isolated stack)<br/>veth IP 10.200.0.2<br/>bounded by cgroup"]
+        HOST -. "veth link 10.200.0.1<->.2<br/>per-netns port space =<br/>no :2049 collision" .-> PORTAL
+    end
+
+    subgraph CLIENTS["client fleet (existing spot fleet)"]
+        C42["mount -t nfs -o vers=4.2<br/>→ host path"]
+        C3["mount -t nfs -o vers=3<br/>→ portal veth IP"]
+    end
+
+    subgraph OBS["observability plane (existing, unchanged)"]
+        GRAF["Grafana / Prometheus<br/>node_exporter mountstats<br/>compare 4.2 vs v3 RTT/ops"]
+    end
+
+    FLAG --> VAR
+    NFSB --> SERVER
+    DSX --> HOST
+    DSX --> PORTAL
+    HOST --> C42
+    PORTAL --> C3
+    C42 --> GRAF
+    C3 --> GRAF
+
+    classDef new fill:#1b4d3e,stroke:#2ecc71,color:#fff;
+    classDef existing fill:#2c3e50,stroke:#7f8c8d,color:#fff;
+    class FLAG,VAR,DSX,PORTAL new;
+    class NFSB,SERVER,HOST,C42,C3,GRAF existing;

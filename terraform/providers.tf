@@ -1,5 +1,7 @@
 terraform {
-  required_version = ">= 1.5.0"
+  # 1.9 floor: dsx_mode's validation cross-references var.nfs_backend, and
+  # cross-variable references in a variable validation block require Terraform 1.9+.
+  required_version = ">= 1.9.0"
 
   required_providers {
     aws = {
