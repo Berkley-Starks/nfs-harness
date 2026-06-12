@@ -116,11 +116,12 @@ configure() {
   need ansible-playbook
 
   local json; json="$(tf output -json)"
-  local endpoint export_path backend private
+  local endpoint export_path backend private dsx
   endpoint="$(echo "$json"   | jq -r '.nfs_endpoint.value // empty')"
   export_path="$(echo "$json"| jq -r '.nfs_export_path.value // "/"')"
   backend="$(echo "$json"    | jq -r '.nfs_backend_selected.value')"
   private="$(echo "$json"    | jq -r '.private_networking.value // false')"
+  dsx="$(echo "$json"        | jq -r '.dsx_mode.value // false')"
   [ -n "$endpoint" ] || die "nfs_endpoint is empty — is the test plane up?"
 
   gen_inventory
@@ -150,6 +151,7 @@ configure() {
       -e "nfs_endpoint=$endpoint" \
       -e "nfs_export_path=$export_path" \
       -e "nfs_backend=$backend" \
+      -e "dsx_mode=$dsx" \
       -T 30 )
   say "fleet configured; workload running"
 }

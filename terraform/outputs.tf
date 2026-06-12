@@ -9,6 +9,11 @@ output "nfs_backend_selected" {
   value       = var.nfs_backend
 }
 
+output "dsx_mode" {
+  description = "Whether the DSX protocol-portal layout (host NFSv4.2 + netns-isolated v3 portal) is enabled on the self-managed server. The harness wrapper reads this into an Ansible extra-var so the nfs_server role's dsx.yml runs."
+  value       = var.dsx_mode
+}
+
 output "nfs_endpoint" {
   description = "Mount endpoint for clients (DNS name for EFS, private IP for self-managed)."
   value = local.use_efs ? (
