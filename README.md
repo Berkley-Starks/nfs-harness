@@ -86,15 +86,19 @@ both planes sit in.
    (container runtime, NFS mount, launch the workload). Container = the workload
    itself. Each layer stays in its lane.
 
-7. **Benchmark correctness: take the network out of the experiment.** The
-   self-managed server defaults to a **network-optimized** instance (`c5n.large`)
-   and sits in a single-AZ **cluster placement group** — never a burstable type,
-   whose network baseline collapses once burst credits drain and makes results a
-   function of wall-clock time. node_exporter's `ethtool` collector charts the ENA
-   **`bw_in/out_allowance_exceeded`** counters, so a NIC bandwidth cap is *visible*
-   rather than masquerading as "slow storage." And if a constrained link is a
-   deliberate variable, a `tc` egress cap (`server_egress_cap_mbit`) imposes it
-   explicitly and reproducibly instead of leaving it to credit exhaustion.
+7. **Benchmark correctness: make every baseline-capped resource a documented
+   variable.** Burstable instances and baseline-throughput volumes both fail the
+   same way — a hidden ceiling that turns results into a function of wall-clock
+   time. So: the server defaults to a **network-optimized** instance (`c5n.large`)
+   in a single-AZ **cluster placement group** (never burstable); the export rides
+   a **dedicated, provisioned-throughput EBS volume** (`server_data_volume_*`, gp3
+   500 MB/s by default — or io2/instance-store), not the gp3-baseline root disk;
+   and the dashboard charts what would otherwise hide a cap — ENA
+   `bw_in/out_allowance_exceeded`, disk throughput/util, iowait split out of CPU,
+   and NFS RTT-vs-queue. If a constrained link *is* the variable, a `tc` egress cap
+   (`server_egress_cap_mbit`) imposes it reproducibly instead of by accident.
+   *(This is the loop in action: each run surfaces the next hidden ceiling — NIC,
+   then disk — and turns it into a knob. See [`docs/findings-write-path-saturation.md`](docs/findings-write-path-saturation.md).)*
 
 ---
 

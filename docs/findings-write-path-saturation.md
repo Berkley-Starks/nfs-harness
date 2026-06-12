@@ -150,6 +150,11 @@ the harness created, measured by a dashboard that cannot see latency.
         accidentally.
 
 ### D. Data-path scaling
+- [x] **Export off the root disk onto a dedicated, provisioned-throughput volume.**
+      Added 2026-06-11 after Run 2 (below) showed the export pinned at the gp3
+      125 MB/s baseline. New `server_data_volume_*` vars: a separate gp3 (or io2)
+      device at 500 MB/s / 4000 IOPS, mounted at `/srv/nfs/share`; root shrinks to
+      OS-only.
 - [ ] `nconnect=4–16` to parallelize per-client transport and stop writes
       head-of-line-blocking reads on the shared TCP connection.
 - [ ] `wsize=1M` (currently shipping ~89 KB per WRITE).
@@ -165,16 +170,43 @@ the harness created, measured by a dashboard that cannot see latency.
 - [ ] Pull results programmatically via PromQL rather than eyeballing panels.
 
 ### F. Dashboard (so this failure class is visible next time)
-- [ ] Add per-op **latency** panel (request / response / queue time from
-      mountstats — counters already exist).
+- [x] Add per-op **latency** panel (RTT vs total request time from mountstats —
+      the gap is client-side queueing). Done 2026-06-11.
+- [x] **Split iowait out of the CPU panel** — the panel now excludes iowait, and a
+      separate iowait panel sits beside it. Done 2026-06-11 (Run 2 proved why: a
+      disk-bound server read 99.8% "busy", 91 pts of it iowait).
+- [x] Add **disk throughput + utilization** panels — a flat-topped throughput line
+      at ~100% util is the volume cap. Done 2026-06-11.
+- [x] Add ENA allowance-drop panel. Done (Platform A).
 - [ ] Show **wire-level vs app-level** throughput side by side.
 - [ ] Add server NIC rx/tx with a **capacity line**.
-- [ ] Add ENA allowance-drop panel.
 - [ ] Add nfsd thread / RPC stats.
-- [ ] **Split iowait out of the CPU panel** — 44 of 46 "busy" points were
-      processes waiting on NFS, not compute.
 
 ---
+
+## Run 2 (2026-06-11) — Platform A validated; bottleneck moved
+
+Re-ran on the network-optimized server (c5n.large). Verified via raw PromQL.
+
+**Platform A confirmed fixed:** server NIC clean — **zero** `bw_*_allowance_exceeded`
+on the server, ~0.5 Gbit/s each way against ~3 Gbps available. The 256 Mbps wall
+is gone. Also clean: zero RPC retransmissions, no pps/conntrack events, steal ~0.
+
+**New bottleneck #1 — server is EBS-throughput-bound (same failure class).**
+`nvme0n1` flat-topped at exactly **125 MB/s** combined since minute one — the gp3
+*baseline*, and the export was on the 100 GB **root** volume. IOPS only ~1.8k/3k,
+so throughput bound first. Disk await 5 ms but op RTT 480–560 ms: requests queue
+behind the cap (avg queue ~9). The "CPU 100%" was a lie — 91% iowait, 0.1% user.
+→ **Fixed:** dedicated provisioned-throughput export volume (§D), iowait split out
+of the CPU panel + disk panels added (§F).
+
+**New bottleneck #2 — clients still burstable (the rule only reached the server).**
+`bw_out_allowance_exceeded` continuous on two t3.small clients (~180/s, ~170/s)
+since run start; the other three ~15–20/s. Not yet binding (server disk is slower)
+but it's credit-dependent — the wall-clock problem again, client-side — and becomes
+the limit the moment the disk is fixed. → **Guidance added** to use c5n/m5n load
+generators for benchmark runs (which also unlocks `cluster_clients`); the ethtool
+panel is what surfaced this.
 
 ## Re-validation sequence (after fixes)
 

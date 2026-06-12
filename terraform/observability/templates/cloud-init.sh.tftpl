@@ -119,9 +119,10 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
   "refresh": "10s",
   "panels": [
     {
-      "type": "timeseries", "title": "CPU busy % (per node)",
+      "type": "timeseries", "title": "CPU busy % excl iowait (per node)",
+      "description": "Real compute load — both idle AND iowait removed, so a disk/network wait can't masquerade as a busy CPU (it did exactly that on the disk-bound run). Pair with the iowait panel below.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "targets": [ { "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)", "legendFormat": "{{instance}}" } ]
+      "targets": [ { "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=~\"idle|iowait\"}[1m])) * 100)", "legendFormat": "{{instance}}" } ]
     },
     {
       "type": "timeseries", "title": "Network receive (bytes/s)",
@@ -150,6 +151,36 @@ cat > /var/lib/grafana-dashboards/nfs-harness.json <<'DASH'
       "targets": [
         { "expr": "rate(node_ethtool_bw_in_allowance_exceeded[1m])", "legendFormat": "{{instance}} rx-allowance" },
         { "expr": "rate(node_ethtool_bw_out_allowance_exceeded[1m])", "legendFormat": "{{instance}} tx-allowance" }
+      ]
+    },
+    {
+      "type": "timeseries", "title": "CPU iowait % (per node)",
+      "description": "Time blocked on I/O. High here with low compute = a disk/network bottleneck, not a CPU one.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [ { "expr": "avg by (instance) (rate(node_cpu_seconds_total{mode=\"iowait\"}[1m])) * 100", "legendFormat": "{{instance}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Disk throughput (bytes/s, read+write per device)",
+      "description": "Watch the server's export device flat-top: a ruler-flat ceiling here is a volume throughput cap (gp3 baseline is 125 MB/s unless provisioned higher).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[1m])", "legendFormat": "{{instance}} {{device}} read" },
+        { "expr": "rate(node_disk_written_bytes_total[1m])", "legendFormat": "{{instance}} {{device}} write" }
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Disk utilization % (per device)",
+      "description": "Fraction of time the device had I/O in flight. ~100% with throughput flat-topped below the device's spec = a provisioned-throughput cap, not a busy disk.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "targets": [ { "expr": "rate(node_disk_io_time_seconds_total[1m]) * 100", "legendFormat": "{{instance}} {{device}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "NFS per-op latency (ms) — RTT vs total (gap = client-side queueing)",
+      "description": "Server response time (RTT) vs total client-perceived time per op. A large gap means requests are queueing on the client behind a slower resource downstream (disk/NIC), not slow server processing.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "targets": [
+        { "expr": "1000 * rate(node_mountstats_nfs_operations_response_time_seconds_total{operation=~\"READ|WRITE\"}[1m]) / rate(node_mountstats_nfs_operations_requests_total{operation=~\"READ|WRITE\"}[1m])", "legendFormat": "{{instance}} {{operation}} rtt" },
+        { "expr": "1000 * rate(node_mountstats_nfs_operations_request_time_seconds_total{operation=~\"READ|WRITE\"}[1m]) / rate(node_mountstats_nfs_operations_requests_total{operation=~\"READ|WRITE\"}[1m])", "legendFormat": "{{instance}} {{operation}} total" }
       ]
     }
   ]

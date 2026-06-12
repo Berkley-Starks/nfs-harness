@@ -47,11 +47,34 @@ locals {
   #  - scoped to the fleet subnet CIDR, not the world (`*`);
   #  - root_squash so a compromised client's root maps to nfsnobody on the server
   #    (no remote-root -> local-root escalation on the export).
+  # The export rides on a DEDICATED data volume (provisioned throughput), found
+  # and mounted here, so it isn't capped by the root disk's gp3 baseline.
   server_user_data = <<-EOF
     #!/bin/bash
     set -euxo pipefail
     dnf install -y nfs-utils
+
+    # Mount the dedicated export volume: find the attached non-root NVMe, format
+    # once (label so /etc/fstab survives NVMe name reshuffles), mount at the
+    # export path. Falls back to the root disk only if the volume never appears.
+    ROOT_DISK="$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" | head -1)"
+    DATA_DISK=""
+    for _try in $(seq 1 30); do
+      for d in $(lsblk -dno NAME -e7); do
+        [ "$d" = "$ROOT_DISK" ] && continue
+        DATA_DISK="/dev/$d"; break
+      done
+      [ -n "$DATA_DISK" ] && break
+      echo "waiting for export volume to attach..."; sleep 5
+    done
+
     mkdir -p /srv/nfs/share
+    if [ -n "$DATA_DISK" ]; then
+      blkid "$DATA_DISK" || mkfs.xfs -L nfsshare "$DATA_DISK"
+      mount "$DATA_DISK" /srv/nfs/share
+      grep -q /srv/nfs/share /etc/fstab || echo "LABEL=nfsshare /srv/nfs/share xfs defaults,nofail 0 2" >> /etc/fstab
+    fi
+
     chmod 1777 /srv/nfs/share
     echo "/srv/nfs/share ${local.fleet_cidr}(rw,sync,no_subtree_check,root_squash)" > /etc/exports
     systemctl enable --now nfs-server
@@ -77,6 +100,21 @@ resource "aws_launch_template" "nfs_server" {
     ebs {
       volume_size           = var.server_root_volume_gb
       volume_type           = "gp3"
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
+  # Dedicated export volume with PROVISIONED throughput/IOPS, so the export isn't
+  # capped by the gp3 baseline (125 MB/s) the way the root disk was. Surfaces as a
+  # second NVMe device; user_data formats + mounts it at /srv/nfs/share.
+  block_device_mappings {
+    device_name = "/dev/sdf"
+    ebs {
+      volume_size           = var.server_data_volume_gb
+      volume_type           = var.server_data_volume_type
+      throughput            = var.server_data_volume_type == "gp3" ? var.server_data_volume_throughput : null
+      iops                  = var.server_data_volume_iops
       encrypted             = true
       delete_on_termination = true
     }

@@ -118,7 +118,7 @@ variable "client_count" {
 }
 
 variable "client_instance_type" {
-  description = "Instance type for client nodes. Keep small during harness dev."
+  description = "Instance type for client nodes. t3.small is the cheap light-testing default, but it's BURSTABLE — its NIC allowance drains under sustained load (watch the ENA bw_out_allowance_exceeded panel), which adds credit-dependent tail latency and becomes the bottleneck once the server disk is fast. For a real bandwidth benchmark, move the load generators to a network-optimized type (c5n/m5n), which also satisfies cluster_clients (t3 can't join a cluster placement group)."
   type        = string
   default     = "t3.small"
 }
@@ -130,9 +130,44 @@ variable "server_instance_type" {
 }
 
 variable "server_root_volume_gb" {
-  description = "Root volume size (GB) for the self-managed NFS server. The export (/srv/nfs/share) lives here, so it must hold the workload's working set: fio writes FILE_SIZE x NUMJOBS per client (default 2 GB) across all clients. The AL2023 default root (~8 GB) overflows past a few clients, so default generously."
+  description = "Root volume size (GB) for the self-managed NFS server. The export now lives on a dedicated data volume (see below), so the root only holds the OS — keep it modest."
+  type        = number
+  default     = 30
+}
+
+###############################################################################
+# NFS server EXPORT data volume.
+#
+# The export (/srv/nfs/share) gets its OWN volume rather than riding on the root
+# disk — so its throughput/IOPS are a documented, provisioned variable instead of
+# the gp3 *baseline* (125 MB/s, 3k IOPS) that silently caps a benchmark. gp3
+# provisioned throughput is independent of size (up to 1000 MB/s, 16k IOPS); for
+# higher or more consistent performance, switch type to io2 or use instance-store
+# NVMe on a storage-optimized instance.
+###############################################################################
+
+variable "server_data_volume_gb" {
+  description = "Size (GB) of the dedicated NFS export data volume. Holds the workload's working set (FILE_SIZE x NUMJOBS per client)."
   type        = number
   default     = 100
+}
+
+variable "server_data_volume_type" {
+  description = "EBS type for the export volume. gp3 (provisioned throughput/IOPS) by default; io2 for higher sustained performance."
+  type        = string
+  default     = "gp3"
+}
+
+variable "server_data_volume_throughput" {
+  description = "Provisioned throughput (MB/s) for the gp3 export volume — set ABOVE the 125 MB/s baseline that bound the export when it lived on the root disk. gp3 supports 125-1000. Ignored for io2."
+  type        = number
+  default     = 500
+}
+
+variable "server_data_volume_iops" {
+  description = "Provisioned IOPS for the export volume (gp3: 3000-16000; io2: up to 64000)."
+  type        = number
+  default     = 4000
 }
 
 variable "client_root_volume_gb" {
