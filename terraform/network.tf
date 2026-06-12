@@ -137,6 +137,19 @@ resource "aws_security_group" "clients" {
     }
   }
 
+  # node_exporter scrape from the observability SG. INLINE on purpose: this SG
+  # uses inline ingress blocks, and Terraform reconciles such an SG to EXACTLY
+  # its inline blocks on every apply — a standalone aws_security_group_rule on
+  # the same SG gets silently stripped by the next apply (which is precisely
+  # how fleet scraping broke twice). Never mix inline + standalone on one SG.
+  ingress {
+    description     = "node_exporter scrape from observability"
+    from_port       = 9100
+    to_port         = 9100
+    protocol        = "tcp"
+    security_groups = [aws_security_group.observability.id]
+  }
+
   egress {
     description = "All egress (clients need to mount NFS + pull packages/images)"
     from_port   = 0
@@ -162,6 +175,30 @@ resource "aws_security_group" "nfs_server" {
     to_port         = 2049
     protocol        = "tcp"
     security_groups = [aws_security_group.clients.id]
+  }
+
+  # node_exporter scrape — inline for the same never-mix reason as on the
+  # clients SG above.
+  ingress {
+    description     = "node_exporter scrape from observability"
+    from_port       = 9100
+    to_port         = 9100
+    protocol        = "tcp"
+    security_groups = [aws_security_group.observability.id]
+  }
+
+  # DSX portal control plane (dsx_mode only): rpcbind + the PINNED mountd port,
+  # from clients. :2049 to the portal IP is covered by the rule above — SG rules
+  # are destination-IP-agnostic on the ENI.
+  dynamic "ingress" {
+    for_each = var.dsx_mode && var.nfs_backend == "self_managed" ? [111, var.dsx_mountd_port] : []
+    content {
+      description     = "DSX portal NFSv3 control (rpcbind/mountd) from clients"
+      from_port       = ingress.value
+      to_port         = ingress.value
+      protocol        = "tcp"
+      security_groups = [aws_security_group.clients.id]
+    }
   }
 
   # SSH to the self-managed server (no-op for EFS), restricted to admin. Dropped
@@ -230,24 +267,6 @@ resource "aws_security_group" "observability" {
   tags = { Name = "${var.project_name}-observability-sg" }
 }
 
-# node_exporter scrape rule: allow 9100 INTO clients from the observability SG.
-resource "aws_security_group_rule" "clients_node_exporter" {
-  type                     = "ingress"
-  description              = "node_exporter scrape from observability"
-  from_port                = 9100
-  to_port                  = 9100
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.clients.id
-  source_security_group_id = aws_security_group.observability.id
-}
-
-# node_exporter scrape rule: allow 9100 INTO the nfs server from observability.
-resource "aws_security_group_rule" "server_node_exporter" {
-  type                     = "ingress"
-  description              = "node_exporter scrape from observability"
-  from_port                = 9100
-  to_port                  = 9100
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.nfs_server.id
-  source_security_group_id = aws_security_group.observability.id
-}
+# (The node_exporter :9100 scrape rules are INLINE in the SGs above — they were
+# standalone aws_security_group_rule resources once, and every SG reconcile
+# stripped them. See the comment on the clients SG.)

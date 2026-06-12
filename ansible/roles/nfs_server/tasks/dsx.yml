@@ -13,6 +13,14 @@
       - iproute
     state: present
 
+# The workload role creates /opt/nfs-harness on CLIENTS; the server has no
+# such role, so make it here (first e2e run failed exactly on this).
+- name: Ensure /opt/nfs-harness exists
+  ansible.builtin.file:
+    path: /opt/nfs-harness
+    state: directory
+    mode: "0755"
+
 - name: Install dsx-portal.sh
   ansible.builtin.copy:
     src: dsx-portal.sh

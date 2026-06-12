@@ -10,11 +10,15 @@
     name: nfs-utils
     state: present
 
+# Skip when already mounted: chmod on a live root-squashed NFS root arrives as
+# nobody and EPERMs — the perms only matter for the empty dir pre-mount anyway
+# (re-run idempotency bug found by the dsx e2e).
 - name: Ensure mount point exists
   ansible.builtin.file:
     path: "{{ nfs_mount_point }}"
     state: directory
     mode: "0777"
+  when: nfs_mount_point not in (ansible_facts.mounts | map(attribute='mount') | list)
 
 - name: Mount the NFS share
   ansible.posix.mount:
@@ -41,7 +45,9 @@
     path: "{{ dsx_mount_point }}"
     state: directory
     mode: "0777"
-  when: dsx_mode | default(false) | bool
+  when:
+    - dsx_mode | default(false) | bool
+    - dsx_mount_point not in (ansible_facts.mounts | map(attribute='mount') | list)
 
 - name: "DSX: mount the NFSv3 portal"
   ansible.posix.mount:
@@ -52,9 +58,11 @@
     state: mounted
   when: dsx_mode | default(false) | bool
 
+# 'vers=3' must appear in the mount opts. Substring check, not equality: the
+# opts line contains BOTH vers=3 and mountvers=3, so grep -o emits two matches.
 - name: "DSX: confirm the portal mount is live and actually v3"
-  ansible.builtin.shell: nfsstat -m | grep -A1 "{{ dsx_mount_point }}" | grep -o "vers=3"
+  ansible.builtin.shell: nfsstat -m | grep -A1 "{{ dsx_mount_point }}"
   register: dsx_vers
   changed_when: false
-  failed_when: dsx_vers.stdout != "vers=3"
+  failed_when: "'vers=3' not in dsx_vers.stdout"
   when: dsx_mode | default(false) | bool

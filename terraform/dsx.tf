@@ -32,29 +32,6 @@ resource "aws_route" "dsx_portal" {
   network_interface_id   = aws_instance.nfs_server[0].primary_network_interface_id
 }
 
-# NFSv3 control-plane ports into the server, from the clients SG only.
-# rpcbind — not strictly needed once clients pass mountport=, kept for
-# showmount/debugging; CIDR never widens beyond the client SG either way.
-resource "aws_security_group_rule" "dsx_rpcbind" {
-  count = local.dsx_enabled ? 1 : 0
-
-  type                     = "ingress"
-  description              = "DSX portal: rpcbind (NFSv3 portmapper) from clients"
-  from_port                = 111
-  to_port                  = 111
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.nfs_server.id
-  source_security_group_id = aws_security_group.clients.id
-}
-
-resource "aws_security_group_rule" "dsx_mountd" {
-  count = local.dsx_enabled ? 1 : 0
-
-  type                     = "ingress"
-  description              = "DSX portal: pinned rpc.mountd (NFSv3 MNT) from clients"
-  from_port                = var.dsx_mountd_port
-  to_port                  = var.dsx_mountd_port
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.nfs_server.id
-  source_security_group_id = aws_security_group.clients.id
-}
+# NFSv3 control-plane SG openings (:111 + pinned mountd) live INLINE in the
+# nfs_server SG (network.tf): that SG uses inline ingress blocks, and standalone
+# rule resources on an inline-rule SG get stripped on every reconcile.
